@@ -1,40 +1,77 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-// import { Button } from "@/components/ui/button";
-// import { Slider } from "@/components/ui/slider";
-// import { Card } from "@/components/ui/card";/
+import { io } from "socket.io-client";
 import { Undo, Trash2 } from "lucide-react";
 
 export default function WhiteBoard() {
   const canvasRef = useRef(null); // Referring to our canvas
+  const socket = useRef(null); // Ref for Socket.io connection
   const [context, setContext] = useState(null); // for storing drawing context
   const [drawing, setDrawing] = useState(false);
   const [currentColor, setCurrentColor] = useState("black");
   const [lineWidth, setLineWidth] = useState(3);
   const [drawingActions, setDrawingActions] = useState([]); // Track our drawing history
   const [currentPath, setCurrentPath] = useState([]); // Path currently being drawn
-  const [currentStyle, setCurrentStyle] = useState({
-    color: "black",
-    lineWidth: 3,
-  }); // combines current color and line width
+  // const [currentStyle, setCurrentStyle] = useState({
+  //   color: "black",
+  //   lineWidth: 3,
+  // }); // combines current color and line width
+
+  const [isSocketEnabled, setIsSocketEnabled] = useState(true); // Toggle for online mode
 
   useEffect(() => {
     if (canvasRef.current) {
       // Checking canvasRef is available then set these properties to canvasRef
       const canvas = canvasRef.current;
-      canvas.width = 900;
-      canvas.height = 500;
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
       const ctx = canvas.getContext("2d");
+      ctx.strokeStyle = currentColor;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = "round";
       setContext(ctx);
       reDrawPreviousData(ctx); // To redraw previous drawing actions
+      console.log(ctx);
     }
   }, []);
+
+  useEffect(() => {
+    // Create a new socket connection with WebSocket transport
+    if (typeof window !== "undefined") {
+      // Ensures it runs only on the client
+      socket.current = io("http://localhost:3001", {
+        transports: ["websocket"], // Force WebSocket instead of polling
+      });
+
+      socket.current.on("connect", () => {
+        console.log("Connected to the server");
+        setIsSocketEnabled(true);
+      });
+
+      socket.current.on("disconnect", () => {
+        console.log("Socket disconnected");
+        setIsSocketEnabled(false);
+      });
+
+      socket.current.on("draw-data", (data) => {
+        // console.log(data);
+        console.log(context);
+        if (context) {
+          drawFromSocket(data);
+        }
+      });
+
+      return () => {
+        socket.current.disconnect();
+      };
+    }
+  }, [context]);
 
   // Function to handle when user start drawing
   const startDrawing = (e) => {
     if (context) {
-      context.beginPath(); // Creaes new Path if context present
+      context.beginPath(); // Creates new Path if context present
       context.moveTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
       setDrawing(true);
     }
@@ -44,37 +81,56 @@ export default function WhiteBoard() {
     if (!drawing) return; // If the user is not actively drawing, exit the function.
     // If drawing then
     if (context) {
-      context.strokeStyle = currentStyle.color;
-      context.lineWidth = currentStyle.lineWidth;
+      context.strokeStyle = currentColor;
+      context.lineWidth = lineWidth;
       context.lineTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY); // Extend the path to the new cursor position.
       context.stroke(); // Render the line on the canvas.
       setCurrentPath([
         ...currentPath,
         { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY },
       ]); // Update the current path state with the new point.
+
+      if (isSocketEnabled) {
+        socket.current.emit("draw-data", {
+          x: e.nativeEvent.offsetX,
+          y: e.nativeEvent.offsetY,
+          color: currentColor,
+          lineWidth: lineWidth,
+        });
+      }
     }
   };
 
   const endDrawing = (e) => {
     setDrawing(false);
-    context && context.closePath();
+    context?.closePath();
     if (currentPath.length > 0) {
       setDrawingActions([
         ...drawingActions,
-        { path: currentPath, style: currentStyle },
+        { path: currentPath, color: currentColor, width: lineWidth },
       ]);
+      setCurrentPath([]);
     }
-    setCurrentPath([]);
+  };
+
+  const drawFromSocket = (data) => {
+    // console.log(data);
+    console.log(data.x);
+    console.log(data.y);
+    context.strokeStyle = data.color;
+    context.lineWidth = data.lineWidth;
+    context.lineTo(data.x, data.y);
+    context.stroke();
   };
 
   const changeColor = (color) => {
     setCurrentColor(color);
-    setCurrentStyle({ ...currentStyle, color });
+    // setCurrentStyle({ ...currentStyle, color });
   };
 
   const changeWidth = (width) => {
     setLineWidth(width); // Update the state for UI
-    setCurrentStyle({ ...currentStyle, lineWidth: parseInt(width) });
+    // setCurrentStyle({ ...currentStyle, lineWidth: parseInt(width) });
   };
 
   const undoDrawing = () => {
@@ -128,59 +184,6 @@ export default function WhiteBoard() {
   };
 
   return (
-    // <div>
-    //   <canvas
-    //     ref={canvasRef}
-    //     onMouseDown={startDrawing}
-    //     onMouseMove={draw}
-    //     onMouseUp={endDrawing}
-    //     onMouseOut={endDrawing}
-    //     className="border border-gray-500"
-    //   />
-
-    //   <div className="flex my-4">
-    //     <div className="flex justify-center space-x-4">
-    //       {["red", "black", "blue", "green", "orange", "yellow"].map(
-    //         (color) => (
-    //           <div
-    //             key={color}
-    //             className={`w-8 h-8 rounded-full cursor-pointer ${
-    //               currentColor === color
-    //                 ? `${color === "black" ? "bg-white" : `bg-${color}-700`}`
-    //                 : `${color === "black" ? "bg-black" : `bg-${color}-500`}`
-    //             }`}
-    //             style={{ backgroundColor: color }}
-    //             onClick={() => changeColor(color)}
-    //           />
-    //         )
-    //       )}
-    //       <div className="flex-grow"></div>
-    //       <input
-    //         type="range"
-    //         min="1"
-    //         max="10"
-    //         value={lineWidth}
-    //         onChange={(e) => changeWidth(e.target.value)}
-    //       />
-    //     </div>
-    //   </div>
-    //   <div className="flex justify-center my-4">
-    //     <button
-    //       className="bg-blue-500 text-white px-4 py-2 mr-2"
-    //       onClick={undoDrawing}
-    //     >
-    //       Undo
-    //     </button>
-
-    //     <button
-    //       className="bg-blue-500 text-white px-4 py-2 mr-2"
-    //       onClick={clearDrawing}
-    //     >
-    //       Clear
-    //     </button>
-    //   </div>
-    // </div>
-
     <div className="flex flex-col items-center bg-gray-100 min-h-screen p-6">
       <div className="bg-white shadow-lg rounded-lg p-4">
         <canvas

@@ -1,5 +1,10 @@
 "use client";
-import DrawingBoard from "@/app/components/DrawingBoard";
+
+import dynamic from "next/dynamic";
+
+const DrawingBoard = dynamic(() => import("../app/components/DrawingBoard"), {
+  ssr: false, // Disable server-side rendering if necessary
+});
 
 export default function HomePage() {
   return (

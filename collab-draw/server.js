@@ -17,8 +17,9 @@ app.use(cors);
 io.on("connection", (socket) => {
   console.log(`User connected :  ${socket.id}`);
 
-  socket.on("draw", (path) => {
-    socket.broadcast.emit("draw", path);
+  socket.on("draw-data", (path) => {
+    console.log(path);
+    socket.broadcast.emit("draw-data", path);
   });
 
   socket.on("disconnect", () => {

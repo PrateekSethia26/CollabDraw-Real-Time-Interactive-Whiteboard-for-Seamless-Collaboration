@@ -16,23 +16,24 @@ export default function WhiteBoard() {
     canvasContext,
     currentColor,
     lineWidth,
-    startDrawing,
+    startDrawingFromParticularPoint,
     draw,
-    endDrawing,
     drawFromSocket,
     changeColor,
     changeWidth,
     undoDrawing,
     clearDrawing,
+    endDrawing,
     reDrawPreviousData,
-  } = useCanvas(canvasRef, socket, isSocketEnabled, selectedTool);
+    
+  } = useCanvas(canvasRef, socket, isSocketEnabled, selectedTool,);
 
   useEffect(() => {
     const cleanup = intializeSocket(
       socket,
       setIsSocketEnabled,
       drawFromSocket,
-      canvasContext
+      canvasContext,
     );
     return cleanup;
   }, [canvasContext]);
@@ -46,7 +47,7 @@ export default function WhiteBoard() {
       <div className="bg-white shadow-lg rounded-lg p-4">
         <canvas
           ref={canvasRef}
-          onMouseDown={startDrawing}
+          onMouseDown={startDrawingFromParticularPoint}
           onMouseMove={draw}
           onMouseUp={endDrawing}
           onMouseOut={endDrawing}

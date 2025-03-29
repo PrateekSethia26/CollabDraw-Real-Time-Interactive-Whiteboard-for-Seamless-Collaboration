@@ -4,7 +4,7 @@ const initializeSocket = (
   socket,
   setIsSocketEnabled,
   drawFromSocket,
-  canvasContext
+  canvasContext,
 ) => {
   // Create a new socket connection with WebSocket transport
   if (typeof window === "undefined") return;
@@ -29,6 +29,15 @@ const initializeSocket = (
       drawFromSocket(data);
     }
   });
+
+
+  socket.current.on("start-drawing", (data) => {
+    if(!canvasContext) return;
+    canvasContext.beginPath();
+    canvasContext.moveTo(data.x, data.y);
+    canvasContext.strokeStyle = data.color;
+    canvasContext.lineWidth = data.lineWidth;
+  })
 
   return () => {
     socket.current.disconnect();

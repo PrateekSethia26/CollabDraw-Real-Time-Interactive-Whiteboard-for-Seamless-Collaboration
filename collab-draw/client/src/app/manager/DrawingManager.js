@@ -1,18 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 const useCanvas = (canvasRef, socket, isSocketEnabled, tool) => {
   const [canvasContext, setCanvasContext] = useState(null); // for storing drawing context
-  const [drawing, setDrawing] = useState(false);
   const [currentColor, setCurrentColor] = useState("black");
   const [lineWidth, setLineWidth] = useState(3);
   const [drawingActions, setDrawingActions] = useState([]); // Track our drawing history
   const [currentPath, setCurrentPath] = useState([]); // Path currently being drawn
-
-  const [startPos, setStartPos] = useState(null);
-
-  useEffect(() => {
-    console.log(tool);
-  }, [tool]);
+  const [drawing, setDrawing] = useState(false);
 
   useEffect(() => {
     try {
@@ -42,24 +36,20 @@ const useCanvas = (canvasRef, socket, isSocketEnabled, tool) => {
     }
   }, []);
 
-  useEffect(() => {
-    console.log("Canvas Context in useEffect:", canvasContext);
-  }, [canvasContext]);
 
-  // Function to handle when user start drawing
-
-  const startDrawing = (e) => {
-    // if (canvasContext) {
-    //   canvasContext.beginPath(); // Creates new Path if context present
-    //   canvasContext.moveTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
-    //   setDrawing(true);
-    // }
-
+  const startDrawingFromParticularPoint = (e) => {
+    
+    console.log("Drawing has started")
     if (!canvasContext) return;
     setDrawing(true);
     const { offsetX, offsetY } = e.nativeEvent;
-    setStartPos({ x: offsetX, y: offsetY });
-
+    socket.current.emit("start-drawing", {
+      tool: "pen",
+      x: offsetX,
+      y: offsetY,
+      color: currentColor,
+      lineWidth: lineWidth,
+    });
     if (tool === "pen") {
       canvasContext.beginPath(); // Creates new Path if context present
       canvasContext.moveTo(offsetX, offsetY);
@@ -67,32 +57,11 @@ const useCanvas = (canvasRef, socket, isSocketEnabled, tool) => {
   };
 
   const draw = (e) => {
-    // if (!drawing || !canvasContext) return; // If the user is not actively drawing, exit the function.
-    // // If drawing then
-    // if (canvasContext) {
-    //   canvasContext.strokeStyle = currentColor;
-    //   canvasContext.lineWidth = lineWidth;
-    //   canvasContext.lineTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY); // Extend the path to the new cursor position.
-    //   canvasContext.stroke(); // Render the line on the canvas.
-    //   setCurrentPath([
-    //     ...currentPath,
-    //     { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY },
-    //   ]); // Update the current path state with the new point.
-
-    //   if (isSocketEnabled) {
-    //     socket.current.emit("draw-data", {
-    //       x: e.nativeEvent.offsetX,
-    //       y: e.nativeEvent.offsetY,
-    //       color: currentColor,
-    //       lineWidth: lineWidth,
-    //     });
-    //   }
-    // }
-
+   
     if (!drawing || !canvasContext) return; // If the user is not actively drawing, exit the function.
 
     const { offsetX, offsetY } = e.nativeEvent;
-
+    
     if (tool === "pen") {
       canvasContext.strokeStyle = currentColor;
       canvasContext.lineWidth = lineWidth;
@@ -111,117 +80,48 @@ const useCanvas = (canvasRef, socket, isSocketEnabled, tool) => {
       });
     }
 
-    if (tool != "pen") {
-      // Clear previous preview before drawing the new shape
-      // canvasContext.clearRect(
-      //   0,
-      //   0,
-      //   canvasRef.current.width,
-      //   canvasRef.current.height
-      // );
-      reDrawPreviousData();
-
-      let shapeData = {
-        tool,
-        startX: startPos.x,
-        startY: startPos.y,
-        endX: offsetX,
-        endY: offsetY,
-        color: currentColor,
-        lineWidth,
-      };
-
-      if (tool === "rectangle") {
-        canvasContext.strokeRect(
-          startPos.x,
-          startPos.y,
-          offsetX - startPos.x,
-          offsetY - startPos.y
-        );
-      } else if (tool === "circle") {
-        const radius = Math.sqrt(
-          (offsetX - startPos.x) ** 2 + (offsetY - startPos.y) ** 2
-        );
-        canvasContext.beginPath();
-        canvasContext.arc(startPos.x, startPos.y, radius, 0, Math.PI * 2);
-        canvasContext.stroke();
-        shapeData.radius = radius;
-      } else if (tool === "line") {
-        canvasContext.beginPath();
-        canvasContext.moveTo(startPos.x, startPos.y);
-        canvasContext.lineTo(offsetX, offsetY);
-        canvasContext.stroke();
-      }
-
-      if (isSocketEnabled) {
-        socket.current.emit("draw-data", shapeData);
-      }
-    }
-  };
-
-  const endDrawing = (e) => {
-    setDrawing(false);
-    canvasContext?.closePath();
-    // if (currentPath.length > 0) {
-    //   setDrawingActions([
-    //     ...drawingActions,
-    //     { path: currentPath, color: currentColor, width: lineWidth },
-    //   ]);
-    //   setCurrentPath([]);
-    // }
-    if (tool != "pen" && startPos) {
-      const { offsetX, offsetY } = e.nativeEvent;
-      let shapeData = {
-        tool,
-        startX: startPos.x,
-        startY: startPos.y,
-        endX: offsetX,
-        endY: offsetY,
-        color: currentColor,
-        lineWidth,
-      };
-      if (tool === "circle") {
-        shapeData.radius = Math.sqrt(
-          (offsetX - startPos.x) ** 2 + (offsetY - startPos.y) ** 2
-        );
-      }
-      setDrawingActions([...drawingActions, shapeData]); // Save the shape
-      setCurrentPath([]);
-    }
   };
 
   const drawFromSocket = (data) => {
-    // console.log(data);
-    // console.log(data.x);
-    // console.log(data.y);
-    // canvasContext.strokeStyle = data.color;
-    // canvasContext.lineWidth = data.lineWidth;
+    
+    if(!canvasContext) {
+      return;
+    }
 
+    if(!drawing) {
+      setDrawing(true);
+    }
     canvasContext.strokeStyle = data.color;
     canvasContext.lineWidth = data.lineWidth;
-
     if (data.tool === "pen") {
       canvasContext.lineTo(data.x, data.y);
       canvasContext.stroke();
-    } else if (data.tool === "rectangle") {
-      canvasContext.strokeRect(
-        data.startX,
-        data.startY,
-        data.endX - data.startX,
-        data.endY - data.startY
-      );
-    } else if (data.tool === "circle") {
-      canvasContext.beginPath();
-      canvasContext.arc(data.startX, data.startY, data.radius, 0, Math.PI * 2);
-      canvasContext.stroke();
-    } else if (data.tool === "line") {
-      canvasContext.beginPath();
-      canvasContext.moveTo(data.startX, data.startY);
-      canvasContext.lineTo(data.endX, data.endY);
-      canvasContext.stroke();
-    }
+      setCurrentPath([...currentPath, { x: data.x, y: data.y }]); // Update the current path state with the new point.
+
+    } 
+    // else if (data.tool === "rectangle") {
+    //   canvasContext.strokeRect(
+    //     data.startX,
+    //     data.startY,
+    //     data.endX - data.startX,
+    //     data.endY - data.startY
+    //   );
+    // } else if (data.tool === "circle") {
+    //   canvasContext.beginPath();
+    //   canvasContext.arc(data.startX, data.startY, data.radius, 0, Math.PI * 2);
+    //   canvasContext.stroke();
+    // } else if (data.tool === "line") {
+    //   canvasContext.beginPath();
+    //   canvasContext.moveTo(data.startX, data.startY);
+    //   canvasContext.lineTo(data.endX, data.endY);
+    //   canvasContext.stroke();
+    // }
   };
 
+  const endDrawing = () => {
+    setDrawing(false);
+    canvasContext.closePath();
+  }
   const changeColor = (color) => {
     setCurrentColor(color);
   };
@@ -320,15 +220,15 @@ const useCanvas = (canvasRef, socket, isSocketEnabled, tool) => {
     canvasContext,
     currentColor,
     lineWidth,
-    startDrawing,
+    startDrawingFromParticularPoint,
     draw,
-    endDrawing,
     drawFromSocket,
     changeColor,
     changeWidth,
     undoDrawing,
     clearDrawing,
     reDrawPreviousData,
+    endDrawing
   };
 };
 

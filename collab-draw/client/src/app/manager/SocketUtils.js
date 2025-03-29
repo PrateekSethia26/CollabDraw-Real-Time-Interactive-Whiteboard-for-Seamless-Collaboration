@@ -25,7 +25,6 @@ const initializeSocket = (
 
   socket.current.on("draw-data", (data) => {
     // console.log(data);
-    console.log(canvasContext);
     if (canvasContext) {
       drawFromSocket(data);
     }

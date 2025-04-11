@@ -25,22 +25,17 @@ export default function WhiteBoard() {
     clearDrawing,
     endDrawing,
     reDrawPreviousData,
-    
-  } = useCanvas(canvasRef, socket, isSocketEnabled, selectedTool,);
+  } = useCanvas(canvasRef, socket, isSocketEnabled, selectedTool);
 
   useEffect(() => {
     const cleanup = intializeSocket(
       socket,
       setIsSocketEnabled,
       drawFromSocket,
-      canvasContext,
+      canvasContext
     );
     return cleanup;
   }, [canvasContext]);
-
-  // useEffect(() => {
-  //   console.log(selectedTool);
-  // }, [selectedTool]);
 
   return (
     <div className="flex flex-col items-center bg-gray-100 min-h-screen p-6">

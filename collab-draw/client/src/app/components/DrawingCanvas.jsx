@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useDebugValue,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useDrawing } from "../context/DrawingContext";
 import toast from "react-hot-toast";
 import { fabric } from "fabric";
@@ -13,6 +19,7 @@ export default function DrawingCanvas() {
   const [startPoint, setStartPoint] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyindexRef = useRef(-1);
 
   const { activeTool, strokeWidth, strokeColor, setUndo, setClearCanvas } =
     useDrawing();
@@ -21,13 +28,18 @@ export default function DrawingCanvas() {
     if (fabricCanvas) {
       const newState = JSON.stringify(fabricCanvas.toJSON());
       setHistory((prev) => {
-        const newHistory = prev.slice(0, historyIndex + 1);
+        const currentIndex = historyindexRef.current;
+        const newHistory = prev.slice(0, currentIndex + 1);
         const updated = [...newHistory, newState];
-        setHistoryIndex(updated.length - 1);
+        const newIndex = updated.length - 1;
+
+        historyindexRef.current = newIndex;
+
+        setHistoryIndex(newIndex);
         return updated;
       });
     }
-  }, [fabricCanvas, historyIndex]);
+  }, [fabricCanvas]);
 
   useEffect(() => {
     if (!canvasRef.current) {
@@ -59,18 +71,54 @@ export default function DrawingCanvas() {
       setHistoryIndex(0);
     }, 100);
 
-    canvas.on("object:added", saveCanvasState);
-    canvas.on("object:modified", saveCanvasState);
-    canvas.on("object:removed", saveCanvasState);
+    toast.success("Canvas ready! Start drawing!");
+
+    return () => {
+      canvas.dispose();
+      window.removeEventListener("resize", windowResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log(activeTool);
+  }, [activeTool]);
+
+  useEffect(() => {
+    historyindexRef.current = historyIndex;
+    console.log(historyindexRef.current);
+  }, [historyIndex]);
+
+  useEffect(() => {
+    if (!fabricCanvas) return;
 
     const undoCanvas = () => {
-      if (!fabricCanvas || historyIndex <= 0) return;
+      if (!fabricCanvas || historyIndex <= 0) {
+        console.log("Cannot undo");
+        console.log(fabricCanvas);
+        console.log("history : ", historyIndex);
+        return;
+      }
 
-      const prevState = history[historyIndex - 1];
+      console.log("🔁 Undo clicked");
 
+      const targetIndex = historyindexRef.current - 1;
+      const prevState = history[targetIndex];
+
+      // Disable modification listeners during load to prevent loops
+      fabricCanvas.off("object:added", saveCanvasState);
+      fabricCanvas.off("object:modified", saveCanvasState);
+      fabricCanvas.off("object:removed", saveCanvasState);
+
+      console.log("history : ", historyIndex);
       fabricCanvas.loadFromJSON(prevState, () => {
         fabricCanvas.renderAll();
-        setHistoryIndex((i) => i - 1);
+        historyindexRef.current = targetIndex;
+        setHistoryIndex(targetIndex);
+
+        // Re-enable listeners after load and state update
+        fabricCanvas.on("object:added", saveCanvasState);
+        fabricCanvas.on("object:modified", saveCanvasState);
+        fabricCanvas.on("object:removed", saveCanvasState);
       });
     };
 
@@ -82,9 +130,10 @@ export default function DrawingCanvas() {
       if (confirmClear) {
         fabricCanvas.clear();
 
-        fabricCanvas.setbackgroundColor("#ffffff", () => {
+        fabricCanvas.setBackgroundColor("#ffffff", () => {
           const clearedState = JSON.stringify(fabricCanvas.toJSON());
           setHistory([clearedState]);
+          historyindexRef.current = 0;
           setHistoryIndex(0);
           fabricCanvas.renderAll();
         });
@@ -94,23 +143,9 @@ export default function DrawingCanvas() {
     setUndo(() => undoCanvas);
     setClearCanvas(() => clearCanvasConfirm);
 
-    toast.success("Canvas ready! Start drawing!");
-
-    return () => {
-      canvas.dispose();
-      window.removeEventListener("resize", windowResize);
-      canvas.off("object:added", saveCanvasState);
-      canvas.off("object:modified", saveCanvasState);
-      canvas.off("object:removed", saveCanvasState);
-    };
-  }, []);
-
-  useEffect(() => {
-    console.log(activeTool);
-  }, [activeTool]);
-
-  useEffect(() => {
-    if (!fabricCanvas) return;
+    fabricCanvas.on("object:added", saveCanvasState);
+    fabricCanvas.on("object:modified", saveCanvasState);
+    fabricCanvas.on("object:removed", saveCanvasState);
 
     fabricCanvas.isDrawingMode =
       activeTool === "pen" || activeTool === "eraser";
@@ -239,6 +274,10 @@ export default function DrawingCanvas() {
     fabricCanvas.on("mouse:move", handleMouseMove);
 
     return () => {
+      fabricCanvas.off("object:added", saveCanvasState);
+      fabricCanvas.off("object:modified", saveCanvasState);
+      fabricCanvas.off("object:removed", saveCanvasState);
+
       fabricCanvas.off("mouse:up", handleMouseUp);
       fabricCanvas.off("mouse:down", handleMouseDown);
       fabricCanvas.off("mouse:move", handleMouseMove);

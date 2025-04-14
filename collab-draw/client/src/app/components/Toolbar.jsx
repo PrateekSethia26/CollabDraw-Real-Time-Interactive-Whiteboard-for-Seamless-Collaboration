@@ -1,6 +1,6 @@
-"use-client";
+"use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useDrawing } from "../context/DrawingContext";
 
 import {
@@ -12,6 +12,8 @@ import {
   Eraser,
   MoveRight,
   Minus,
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
 
 export default function Toolbar() {
@@ -22,6 +24,8 @@ export default function Toolbar() {
     setStrokeColor,
     strokeWidth,
     setStrokeWidth,
+    undo,
+    clearCanvas,
   } = useDrawing();
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showLineWidthPicker, setShowLineWidthPicker] = useState(false);
@@ -35,8 +39,6 @@ export default function Toolbar() {
     { id: "line", icon: MoveRight, label: "Line" },
     { id: "text", icon: Type, label: "Text" },
   ];
-
-  const lineWidthOptions = [1, 3, 5, 7, 9, 10];
 
   return (
     <div className="absolute left-4 top-1/2 flex flex-col transform -translate-y-1/2 gap-2 bg-white shadow-xl rounded-2xl p-3">
@@ -85,22 +87,57 @@ export default function Toolbar() {
       </div>
 
       {/* For Line Width */}
-      <div className="mt-2">
-        <span className="block text-sm text-gray-700 mb-1">Line Width</span>
-        <div className="flex flex-wrap gap-1 mt-1">
-          {lineWidthOptions.map((width) => (
-            <button
-              key={width}
-              onClick={() => setStrokeWidth(width)}
-              className={`w-8 h-8 rounded flex items-center justify-center border border-gray-300 text-gray-700 hover:bg-gray-100 transition-all duration-200 ${
-                strokeWidth === width ? "bg-gray-200" : ""
-              }`}
-            >
-              <Minus className="w-4 h-8" style={{ strokeWidth: width }} />
-            </button>
-          ))}
-        </div>
+      <div className="relative mt-2">
+        <button
+          onClick={() => setShowLineWidthPicker(!showLineWidthPicker)}
+          className="group relative flex items-center justify-center w-15 h-15 rounded-xl border border-gray-300 text-black hover:bg-gray-500 transition-all duration-200"
+        >
+          <Minus className="w-5 h-8" style={{ strokeWidth: strokeWidth }}>
+            {strokeWidth}
+          </Minus>
+          <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            Line Width
+          </span>
+        </button>
+
+        {showLineWidthPicker && (
+          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 p-2 bg-white border border-gray-300 rounded-lg shadow-lg w-28">
+            <input
+              type="range"
+              min={1}
+              max={50}
+              value={strokeWidth}
+              onChange={(e) => setStrokeWidth(Number(e.target.value))}
+              className="w-full"
+            />
+            <div className="text-center text-sm mt-1">{strokeWidth}px</div>
+          </div>
+        )}
       </div>
+
+      {/* Undo Option */}
+      <button
+        onClick={undo}
+        title="undo"
+        className="group relative flex items-center justify-center w-15 h-15 rounded-xl  border border-gray-300 text-black hover:bg-gray-500 transition-all duration-200 mt-2"
+      >
+        <RotateCcw className="w-5 h-5" />
+        <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+          Undo
+        </span>
+      </button>
+
+      {/* Clear Canvas Option */}
+      <button
+        onClick={clearCanvas}
+        title="clear Canvas"
+        className="group relative flex items-center justify-center w-15 h-15 rounded-xl  border border-gray-300 text-black hover:bg-gray-500 transition-all duration-200 mt-2"
+      >
+        <Trash2 className="w-5 h-5" />
+        <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+          Clear
+        </span>
+      </button>
     </div>
   );
 }

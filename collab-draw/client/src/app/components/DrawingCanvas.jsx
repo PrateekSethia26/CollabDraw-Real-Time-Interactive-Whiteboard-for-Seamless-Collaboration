@@ -1,16 +1,33 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDrawing } from "../context/DrawingContext";
 import toast from "react-hot-toast";
 import { fabric } from "fabric";
 
 export default function DrawingCanvas() {
   const canvasRef = useRef(null);
+  const socket = useRef(null);
+  const [isSocketEnabled, setIsSocketEnabled] = useState(true); // Toggle for online mode
   const [fabricCanvas, setFabricCanvas] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [activeObject, setActiveObject] = useState(null);
   const [startPoint, setStartPoint] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
 
-  const { activeTool, strokeWidth, strokeColor } = useDrawing();
+  const { activeTool, strokeWidth, strokeColor, setUndo, setClearCanvas } =
+    useDrawing();
+
+  const saveCanvasState = useCallback(() => {
+    if (fabricCanvas) {
+      const newState = JSON.stringify(fabricCanvas.toJSON());
+      setHistory((prev) => {
+        const newHistory = prev.slice(0, historyIndex + 1);
+        const updated = [...newHistory, newState];
+        setHistoryIndex(updated.length - 1);
+        return updated;
+      });
+    }
+  }, [fabricCanvas, historyIndex]);
 
   useEffect(() => {
     if (!canvasRef.current) {
@@ -34,14 +51,57 @@ export default function DrawingCanvas() {
       });
       canvas.renderAll();
     };
-
     window.addEventListener("resize", windowResize);
+
+    setTimeout(() => {
+      const intialState = JSON.stringify(canvas.toJSON());
+      setHistory([intialState]);
+      setHistoryIndex(0);
+    }, 100);
+
+    canvas.on("object:added", saveCanvasState);
+    canvas.on("object:modified", saveCanvasState);
+    canvas.on("object:removed", saveCanvasState);
+
+    const undoCanvas = () => {
+      if (!fabricCanvas || historyIndex <= 0) return;
+
+      const prevState = history[historyIndex - 1];
+
+      fabricCanvas.loadFromJSON(prevState, () => {
+        fabricCanvas.renderAll();
+        setHistoryIndex((i) => i - 1);
+      });
+    };
+
+    const clearCanvasConfirm = () => {
+      if (!fabricCanvas) return;
+      const confirmClear = window.confirm(
+        "Are you sure you want to clear the canvas ?"
+      );
+      if (confirmClear) {
+        fabricCanvas.clear();
+
+        fabricCanvas.setbackgroundColor("#ffffff", () => {
+          const clearedState = JSON.stringify(fabricCanvas.toJSON());
+          setHistory([clearedState]);
+          setHistoryIndex(0);
+          fabricCanvas.renderAll();
+        });
+      }
+    };
+
+    setUndo(() => undoCanvas);
+    setClearCanvas(() => clearCanvasConfirm);
 
     toast.success("Canvas ready! Start drawing!");
 
     return () => {
       canvas.dispose();
       window.removeEventListener("resize", windowResize);
+      canvas.off("object:added", saveCanvasState);
+      canvas.off("object:modified", saveCanvasState);
+      canvas.off("object:removed", saveCanvasState);
     };
   }, []);
 
@@ -60,7 +120,7 @@ export default function DrawingCanvas() {
       fabricCanvas.freeDrawingBrush.width = strokeWidth;
     } else if (activeTool === "eraser") {
       fabricCanvas.freeDrawingBrush.color = "#ffffff";
-      fabricCanvas.freeDrawingBrush.width = 20;
+      fabricCanvas.freeDrawingBrush.width = 40;
     }
 
     if (activeTool === "select") {
@@ -191,6 +251,8 @@ export default function DrawingCanvas() {
     fabricCanvas,
     startPoint,
     activeObject,
+    setUndo,
+    setClearCanvas,
   ]);
 
   return (

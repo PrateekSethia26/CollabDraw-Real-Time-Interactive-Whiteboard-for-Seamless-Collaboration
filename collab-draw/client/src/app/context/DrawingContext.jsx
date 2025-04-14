@@ -16,6 +16,8 @@ export const DrawingProvider = ({ children }) => {
   const [activeTool, setActiveTool] = useState(DrawingTool.PEN);
   const [strokeColor, setStrokeColor] = useState("#000000");
   const [strokeWidth, setStrokeWidth] = useState(5);
+  const [undo, setUndo] = useState(() => {});
+  const [clearCanvas, setClearCanvas] = useState(() => {});
 
   return (
     <DrawingContext.Provider
@@ -26,9 +28,13 @@ export const DrawingProvider = ({ children }) => {
         setStrokeColor,
         strokeWidth,
         setStrokeWidth,
+        undo,
+        setUndo,
+        clearCanvas,
+        setClearCanvas,
       }}
     >
-      {children} {/* Add this line */}
+      {children}
     </DrawingContext.Provider>
   );
 };

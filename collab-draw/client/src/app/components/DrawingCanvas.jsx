@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useDebugValue,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDrawing } from "../context/DrawingContext";
 import toast from "react-hot-toast";
 import { fabric } from "fabric";
@@ -18,28 +12,25 @@ export default function DrawingCanvas() {
   const [activeObject, setActiveObject] = useState(null);
   const [startPoint, setStartPoint] = useState(null);
   const [history, setHistory] = useState([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const historyindexRef = useRef(-1);
 
   const { activeTool, strokeWidth, strokeColor, setUndo, setClearCanvas } =
     useDrawing();
 
   const saveCanvasState = useCallback(() => {
     if (fabricCanvas) {
+      if (activeTool === "select") return;
       const newState = JSON.stringify(fabricCanvas.toJSON());
       setHistory((prev) => {
-        const currentIndex = historyindexRef.current;
-        const newHistory = prev.slice(0, currentIndex + 1);
-        const updated = [...newHistory, newState];
-        const newIndex = updated.length - 1;
+        const updated = [...prev, newState];
 
-        historyindexRef.current = newIndex;
-
-        setHistoryIndex(newIndex);
         return updated;
       });
     }
   }, [fabricCanvas]);
+
+  useEffect(() => {
+    console.log("History length from saved : ", history.length);
+  }, [history]);
 
   useEffect(() => {
     if (!canvasRef.current) {
@@ -68,7 +59,6 @@ export default function DrawingCanvas() {
     setTimeout(() => {
       const intialState = JSON.stringify(canvas.toJSON());
       setHistory([intialState]);
-      setHistoryIndex(0);
     }, 100);
 
     toast.success("Canvas ready! Start drawing!");
@@ -84,42 +74,32 @@ export default function DrawingCanvas() {
   }, [activeTool]);
 
   useEffect(() => {
-    historyindexRef.current = historyIndex;
-    console.log(historyindexRef.current);
-  }, [historyIndex]);
-
-  useEffect(() => {
     if (!fabricCanvas) return;
 
     const undoCanvas = () => {
-      if (!fabricCanvas || historyIndex <= 0) {
+      if (!fabricCanvas || history.length <= 0) {
         console.log("Cannot undo");
         console.log(fabricCanvas);
-        console.log("history : ", historyIndex);
         return;
       }
 
       console.log("🔁 Undo clicked");
 
-      const targetIndex = historyindexRef.current - 1;
-      const prevState = history[targetIndex];
+      const prevState = history[history.length - 1];
 
       // Disable modification listeners during load to prevent loops
       fabricCanvas.off("object:added", saveCanvasState);
       fabricCanvas.off("object:modified", saveCanvasState);
       fabricCanvas.off("object:removed", saveCanvasState);
 
-      console.log("history : ", historyIndex);
       fabricCanvas.loadFromJSON(prevState, () => {
         fabricCanvas.renderAll();
-        historyindexRef.current = targetIndex;
-        setHistoryIndex(targetIndex);
-
-        // Re-enable listeners after load and state update
-        fabricCanvas.on("object:added", saveCanvasState);
-        fabricCanvas.on("object:modified", saveCanvasState);
-        fabricCanvas.on("object:removed", saveCanvasState);
       });
+      history.pop();
+      // Re-enable listeners after load and state update
+      fabricCanvas.on("object:added", saveCanvasState);
+      fabricCanvas.on("object:modified", saveCanvasState);
+      fabricCanvas.on("object:removed", saveCanvasState);
     };
 
     const clearCanvasConfirm = () => {
@@ -131,10 +111,7 @@ export default function DrawingCanvas() {
         fabricCanvas.clear();
 
         fabricCanvas.setBackgroundColor("#ffffff", () => {
-          const clearedState = JSON.stringify(fabricCanvas.toJSON());
-          setHistory([clearedState]);
-          historyindexRef.current = 0;
-          setHistoryIndex(0);
+          setHistory([]);
           fabricCanvas.renderAll();
         });
       }

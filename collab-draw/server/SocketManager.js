@@ -10,6 +10,11 @@ class SocketManager {
       console.log(`User connected :  ${socket.id}`);
       console.log(socket);
 
+
+      socket.on("start-drawing", (path) => {
+        socket.broadcast.emit("start-drawing", path);
+      })
+
       socket.on("draw-data", (path) => {
         try {
           socket.broadcast.emit("draw-data", path);

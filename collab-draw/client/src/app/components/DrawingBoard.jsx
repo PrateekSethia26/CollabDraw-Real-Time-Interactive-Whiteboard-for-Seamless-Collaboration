@@ -16,14 +16,14 @@ export default function WhiteBoard() {
     canvasContext,
     currentColor,
     lineWidth,
-    startDrawing,
+    startDrawingFromParticularPoint,
     draw,
-    endDrawing,
     drawFromSocket,
     changeColor,
     changeWidth,
     undoDrawing,
     clearDrawing,
+    endDrawing,
     reDrawPreviousData,
   } = useCanvas(canvasRef, socket, isSocketEnabled, selectedTool);
 
@@ -37,16 +37,12 @@ export default function WhiteBoard() {
     return cleanup;
   }, [canvasContext]);
 
-  // useEffect(() => {
-  //   console.log(selectedTool);
-  // }, [selectedTool]);
-
   return (
     <div className="flex flex-col items-center bg-gray-100 min-h-screen p-6">
       <div className="bg-white shadow-lg rounded-lg p-4">
         <canvas
           ref={canvasRef}
-          onMouseDown={startDrawing}
+          onMouseDown={startDrawingFromParticularPoint}
           onMouseMove={draw}
           onMouseUp={endDrawing}
           onMouseOut={endDrawing}

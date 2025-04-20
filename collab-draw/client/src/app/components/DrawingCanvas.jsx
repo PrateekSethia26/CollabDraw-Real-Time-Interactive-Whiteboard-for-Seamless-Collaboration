@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDrawing } from "../context/DrawingContext";
 import toast from "react-hot-toast";
 import { fabric } from "fabric";
+import intializeSocket from "../manager/SocketManager";
 
-export default function DrawingCanvas() {
+export default function DrawingCanvas({ isSocketEnabled }) {
   const canvasRef = useRef(null);
   const socket = useRef(null);
-  const [isSocketEnabled, setIsSocketEnabled] = useState(true); // Toggle for online mode
   const [fabricCanvas, setFabricCanvas] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [activeObject, setActiveObject] = useState(null);
@@ -16,9 +16,49 @@ export default function DrawingCanvas() {
   const { activeTool, strokeWidth, strokeColor, setUndo, setClearCanvas } =
     useDrawing();
 
+  const drawFromSocket = useCallback(
+    (data) => {
+      if (!fabricCanvas || !data?.props || !data?.type) return;
+      let shape = null;
+
+      switch (data.type) {
+        case "rectangle":
+          shape = new fabric.Rect({ ...data.props });
+          break;
+
+        case "circle":
+          shape = new fabric.Circle({ ...data.props });
+          break;
+
+        case "line":
+          shape = new fabric.Line(
+            [data.props.x1, data.props.y1, data.props.x2, data.props.y2],
+            { ...data.props }
+          );
+          break;
+
+        case "pen":
+          shape = new fabric.Path(data.props.path, { ...data.props });
+          break;
+
+        case "select":
+          shape = data.props;
+
+        default:
+          console.warn("Unknown shape type from socket:", data.type);
+          return;
+      }
+
+      if (shape) {
+        fabricCanvas.add(shape);
+        fabricCanvas.renderAll();
+      }
+    },
+    [fabricCanvas]
+  );
+
   const saveCanvasState = useCallback(() => {
     if (fabricCanvas) {
-      if (activeTool === "select") return;
       const newState = JSON.stringify(fabricCanvas.toJSON());
       setHistory((prev) => {
         const updated = [...prev, newState];
@@ -27,6 +67,16 @@ export default function DrawingCanvas() {
       });
     }
   }, [fabricCanvas]);
+
+  useEffect(() => {
+    const cleanup = intializeSocket(
+      socket,
+      isSocketEnabled,
+      drawFromSocket,
+      fabricCanvas
+    );
+    return cleanup;
+  }, [isSocketEnabled, fabricCanvas]);
 
   useEffect(() => {
     console.log("History length from saved : ", history.length);
@@ -70,22 +120,18 @@ export default function DrawingCanvas() {
   }, []);
 
   useEffect(() => {
-    console.log(activeTool);
-  }, [activeTool]);
-
-  useEffect(() => {
     if (!fabricCanvas) return;
 
     const undoCanvas = () => {
       if (!fabricCanvas || history.length <= 0) {
         console.log("Cannot undo");
-        console.log(fabricCanvas);
         return;
       }
 
       console.log("🔁 Undo clicked");
 
       const prevState = history[history.length - 1];
+      const socketPrevState = history[history.length - 2];
 
       // Disable modification listeners during load to prevent loops
       fabricCanvas.off("object:added", saveCanvasState);
@@ -96,6 +142,11 @@ export default function DrawingCanvas() {
         fabricCanvas.renderAll();
       });
       history.pop();
+
+      if (isSocketEnabled) {
+        socket?.current?.emit("canvas:undo", { state: socketPrevState });
+      }
+
       // Re-enable listeners after load and state update
       fabricCanvas.on("object:added", saveCanvasState);
       fabricCanvas.on("object:modified", saveCanvasState);
@@ -114,6 +165,10 @@ export default function DrawingCanvas() {
           setHistory([]);
           fabricCanvas.renderAll();
         });
+
+        if (isSocketEnabled) {
+          socket?.current?.emit("canvas:clear", { state: history });
+        }
       }
     };
 
@@ -136,14 +191,31 @@ export default function DrawingCanvas() {
     }
 
     if (activeTool === "select") {
+      var sel = new fabric.ActiveSelection(fabricCanvas.getObjects(), {
+        canvas: fabricCanvas,
+      });
+      fabricCanvas.setActiveObject(sel);
       fabricCanvas.discardActiveObject();
-      fabricCanvas.renderAll();
+      fabricCanvas.requestRenderAll();
     }
 
     // Clear mouse activities
     fabricCanvas.off("mouse:up");
     fabricCanvas.off("mouse:down");
     fabricCanvas.off("mouse:move");
+    fabricCanvas.off("path:created");
+
+    fabricCanvas.on("path:created", (options) => {
+      const path = options.path;
+      if (!path) return;
+
+      if (isSocketEnabled) {
+        socket?.current?.emit("shape:draw", {
+          type: "pen",
+          props: path.toObject(),
+        });
+      }
+    });
 
     const handleMouseDown = (options) => {
       if (!fabricCanvas) return; // prevent memory leak
@@ -239,11 +311,21 @@ export default function DrawingCanvas() {
     };
 
     const handleMouseUp = () => {
-      if (isDrawing && fabricCanvas && activeObject) {
-        setIsDrawing(false);
-        setActiveObject(null);
-        fabricCanvas.renderAll();
+      if (!fabricCanvas) return;
+
+      if (isSocketEnabled) {
+        if (activeObject === "pen") return;
+        const shapeData = activeObject?.toObject();
+        socket?.current?.emit("shape:draw", {
+          type: activeTool,
+          props: shapeData,
+        });
       }
+      setActiveObject(null);
+      fabricCanvas.discardActiveObject();
+      setIsDrawing(false);
+
+      fabricCanvas.renderAll();
     };
 
     fabricCanvas.on("mouse:up", handleMouseUp);
@@ -258,6 +340,7 @@ export default function DrawingCanvas() {
       fabricCanvas.off("mouse:up", handleMouseUp);
       fabricCanvas.off("mouse:down", handleMouseDown);
       fabricCanvas.off("mouse:move", handleMouseMove);
+      fabricCanvas.off("path:created");
     };
   }, [
     activeTool,

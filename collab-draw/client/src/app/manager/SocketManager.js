@@ -1,10 +1,11 @@
 import { io } from "socket.io-client";
+import { fabric } from "fabric";
 
 const initializeSocket = (
   socket,
-  setIsSocketEnabled,
+  isSocketEnabled,
   drawFromSocket,
-  canvasContext,
+  fabricCanvas
 ) => {
   // Create a new socket connection with WebSocket transport
   if (typeof window === "undefined") return;
@@ -15,29 +16,36 @@ const initializeSocket = (
 
   socket.current.on("connect", () => {
     console.log("Connected to the server");
-    setIsSocketEnabled(true);
+    // setIsSocketEnabled(true);
   });
 
   socket.current.on("disconnect", () => {
     console.log("Socket disconnected");
-    setIsSocketEnabled(false);
+    // setIsSocketEnabled(false);
   });
 
-  socket.current.on("draw-data", (data) => {
-    // console.log(data);
-    if (canvasContext) {
+  socket.current.on("shape:draw", (data) => {
+    console.log(data);
+    if (fabricCanvas) {
       drawFromSocket(data);
     }
   });
 
+  socket.current.on("canvas:undo", ({ state }) => {
+    if (fabricCanvas && state) {
+      fabricCanvas.loadFromJSON(state, () => {
+        fabricCanvas.renderAll();
+      });
+    }
+  });
 
-  socket.current.on("start-drawing", (data) => {
-    if(!canvasContext) return;
-    canvasContext.beginPath();
-    canvasContext.moveTo(data.x, data.y);
-    canvasContext.strokeStyle = data.color;
-    canvasContext.lineWidth = data.lineWidth;
-  })
+  socket.current.on("canvas:clear", ({ state }) => {
+    if (fabricCanvas && state) {
+      fabricCanvas.loadFromJSON(state, () => {
+        fabricCanvas.renderAll();
+      });
+    }
+  });
 
   return () => {
     socket.current.disconnect();

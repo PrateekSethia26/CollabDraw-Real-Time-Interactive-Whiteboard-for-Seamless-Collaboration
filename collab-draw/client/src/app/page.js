@@ -59,7 +59,7 @@ export default function HomePage() {
           <div className="w-full h-screen bg-white shadow-lg rounded-lg relative">
             {activeComponent === "DrawingCanvas" && (
               <DrawingProvider>
-                <DrawingCanvas />
+                <DrawingCanvas isSocketEnabled={true} />
                 <Toolbar />
                 <button
                   className="absolute top-4 right-4 bg-gray-200 px-8 py-4 rounded-lg text-black"
@@ -91,6 +91,7 @@ export default function HomePage() {
                 icon={<FaUsers className="text-pink-400 text-3xl" size={50} />}
                 title="Collaborative Space"
                 description="Create or join a room to collaborate with others in real-time."
+                onClick={() => setActiveComponent("CollaborativeCanvas")}
               />
             </div>
           </>

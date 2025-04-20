@@ -8,19 +8,33 @@ class SocketManager {
   initializeSocketEvents() {
     this.io.on("connection", (socket) => {
       console.log(`User connected :  ${socket.id}`);
-      console.log(socket);
 
-
-      socket.on("start-drawing", (path) => {
-        socket.broadcast.emit("start-drawing", path);
-      })
-
-      socket.on("draw-data", (path) => {
+      socket.on("shape:draw", (path) => {
         try {
-          socket.broadcast.emit("draw-data", path);
+          socket.broadcast.emit("shape:draw", path);
         } catch (error) {
           console.error(`Error in draw-data event: ${error.message}`);
           socket.emit("error", { message: "Socket error while drawing." });
+        }
+      });
+
+      socket.on("canvas:undo", (param) => {
+        try {
+          const state = param || {};
+          socket.broadcast.emit("canvas:undo", { state });
+        } catch (error) {
+          console.error(`Error in undo event: ${error.message}`);
+          socket.emit("error", { message: "Socket error while undoing." });
+        }
+      });
+
+      socket.on("canvas:clear", (param) => {
+        try {
+          const state = param || {};
+          socket.broadcast.emit("canvas:clear", { state });
+        } catch (error) {
+          console.error(`Error in clear event: ${error.message}`);
+          socket.emit("error", { message: "Socket error while undoing." });
         }
       });
 

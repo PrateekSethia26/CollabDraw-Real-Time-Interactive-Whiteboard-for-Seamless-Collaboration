@@ -28,6 +28,11 @@ const Card = ({ icon, title, description, onClick }) => {
 
 export default function HomePage() {
   const [activeComponent, setActiveComponent] = useState(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Log the active component whenever it changes
   useEffect(() => {
@@ -57,18 +62,26 @@ export default function HomePage() {
         )}
         {activeComponent ? (
           <div className="w-full h-screen bg-white shadow-lg rounded-lg relative">
-            {activeComponent === "DrawingCanvas" && (
-              <DrawingProvider>
-                <DrawingCanvas isSocketEnabled={true} />
-                <Toolbar />
-                <button
-                  className="absolute top-4 right-4 bg-gray-200 px-8 py-4 rounded-lg text-black"
-                  onClick={() => setActiveComponent(null)}
-                >
-                  Close
-                </button>
-              </DrawingProvider>
-            )}
+            <DrawingProvider>
+              {activeComponent === "DrawingCanvas" && mounted && (
+                <>
+                  <DrawingCanvas isSocketEnabled={false} />
+                  <Toolbar />
+                </>
+              )}
+              {activeComponent === "CollaborativeCanvas" && mounted && (
+                <>
+                  <DrawingCanvas isSocketEnabled={true} />
+                  <Toolbar />
+                </>
+              )}
+              <button
+                className="absolute top-4 right-4 bg-gray-200 px-8 py-4 rounded-lg text-black"
+                onClick={() => setActiveComponent(null)}
+              >
+                Close
+              </button>
+            </DrawingProvider>
           </div>
         ) : (
           <>

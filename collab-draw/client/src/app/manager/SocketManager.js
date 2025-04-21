@@ -5,7 +5,8 @@ const initializeSocket = (
   socket,
   isSocketEnabled,
   drawFromSocket,
-  fabricCanvas
+  fabricCanvas,
+  handleSelectionUpdate
 ) => {
   // Create a new socket connection with WebSocket transport
   if (typeof window === "undefined") return;
@@ -46,6 +47,15 @@ const initializeSocket = (
       });
     }
   });
+
+  socket.current.on(
+    ("selection:update",
+    (selectionIds) => {
+      if (handleSelectionUpdate) {
+        handleSelectionUpdate(selectionIds);
+      }
+    })
+  );
 
   return () => {
     socket.current.disconnect();

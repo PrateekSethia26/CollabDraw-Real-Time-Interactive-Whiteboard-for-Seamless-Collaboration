@@ -38,6 +38,17 @@ class SocketManager {
         }
       });
 
+      socket.on("selection:update", (selectedIds) => {
+        try {
+          socket.broadcast.emit("selection:update", selectedIds);
+        } catch (error) {
+          console.error(`Error in selection:update event: ${error.message}`);
+          socket.emit("error", {
+            message: "Socket error during selection update.",
+          });
+        }
+      });
+
       socket.on("disconnect", () => {
         console.log(`User disconnected : ${socket.id}`);
       });

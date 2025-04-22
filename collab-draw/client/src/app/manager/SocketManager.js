@@ -1,65 +1,136 @@
 import { io } from "socket.io-client";
-import { fabric } from "fabric";
 
-const initializeSocket = (
-  socket,
-  isSocketEnabled,
-  drawFromSocket,
-  fabricCanvas,
-  handleSelectionUpdate
-) => {
-  // Create a new socket connection with WebSocket transport
-  if (typeof window === "undefined") return;
+/**
+ * Initialize and manage socket connection for the drawing canvas
+ * 
+ * @param {React.MutableRefObject} socketRef - Reference to store the socket instance
+ * @param {boolean} isEnabled - Whether socket functionality is enabled
+ * @param {Function} drawHandler - Handler for incoming 'shape:draw' events
+ * @param {Function} modifyHandler - Handler for incoming 'shape:modify' events
+ * @param {Object} canvas - The fabric.js canvas instance
+ * @param {Function} selectionUpdateHandler - Handler for incoming 'selection:update' events
+ * @returns {Function} Cleanup function to disconnect socket
+ */
+export default function initializeSocket(
+  socketRef,
+  isEnabled,
+  drawHandler,
+  modifyHandler,
+  canvas,
+  selectionUpdateHandler
+) {
+  // Early return if sockets are disabled
+  if (!isEnabled) {
+    console.log("Socket connections disabled. Running in local-only mode.");
+    return () => {}; // Return empty cleanup function
+  }
 
-  socket.current = io("http://localhost:3001", {
-    transports: ["websocket"], // Force WebSocket instead of polling
+  console.log("Initializing socket connection...");
+
+  // Close existing connection if any
+  if (socketRef.current) {
+    console.log("Closing existing socket connection");
+    socketRef.current.disconnect();
+    socketRef.current = null;
+  }
+
+  // Create new socket connection
+  const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001", {
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    transports: ["websocket"],
   });
 
-  socket.current.on("connect", () => {
-    console.log("Connected to the server");
-    // setIsSocketEnabled(true);
+  // Store socket reference
+  socketRef.current = socket;
+
+  // Set up socket event listeners
+  socket.on("connect", () => {
+    console.log("Socket connected with ID:", socket.id);
   });
 
-  socket.current.on("disconnect", () => {
-    console.log("Socket disconnected");
-    // setIsSocketEnabled(false);
+  socket.on("connect_error", (err) => {
+    console.error("Socket connection error:", err.message);
   });
 
-  socket.current.on("shape:draw", (data) => {
-    console.log(data);
-    if (fabricCanvas) {
-      drawFromSocket(data);
+  socket.on("disconnect", (reason) => {
+    console.log("Socket disconnected:", reason);
+  });
+
+  // Listen for drawing events from other clients
+  socket.on("shape:draw", (data) => {
+    console.log("Received shape:draw event:", data.type);
+    if (drawHandler && typeof drawHandler === "function") {
+      drawHandler(data);
     }
   });
 
-  socket.current.on("canvas:undo", ({ state }) => {
-    if (fabricCanvas && state) {
-      fabricCanvas.loadFromJSON(state, () => {
-        fabricCanvas.renderAll();
+  // Listen for modification events from other clients
+  socket.on("shape:modify", (data) => {
+    console.log("Received shape:modify event for object ID:", data.id);
+    if (modifyHandler && typeof modifyHandler === "function") {
+      modifyHandler(data);
+    }
+  });
+
+  // Listen for selection update events from other clients
+  socket.on("selection:update", (selectionIds) => {
+    console.log("Received selection:update event:", selectionIds);
+    if (selectionUpdateHandler && typeof selectionUpdateHandler === "function") {
+      selectionUpdateHandler(selectionIds);
+    }
+  });
+
+  // Listen for canvas undo events
+  socket.on("canvas:undo", (data) => {
+    console.log("Received canvas:undo event");
+    if (canvas && data.state) {
+      // Remove event listeners temporarily to prevent loops
+      const tempListeners = canvas.__eventListeners;
+      canvas.__eventListeners = {};
+      
+      // Load the state
+      canvas.loadFromJSON(data.state, () => {
+        // Restore event listeners
+        canvas.__eventListeners = tempListeners;
+        canvas.renderAll();
       });
     }
   });
 
-  socket.current.on("canvas:clear", ({ state }) => {
-    if (fabricCanvas && state) {
-      fabricCanvas.loadFromJSON(state, () => {
-        fabricCanvas.renderAll();
+  // Listen for canvas clear events
+  socket.on("canvas:clear", (data) => {
+    console.log("Received canvas:clear event");
+    if (canvas) {
+      // Remove event listeners temporarily to prevent loops
+      const tempListeners = canvas.__eventListeners;
+      canvas.__eventListeners = {};
+      
+      // Clear and set background
+      canvas.clear();
+      canvas.setBackgroundColor("#ffffff", () => {
+        // Reload if state provided
+        if (data.state) {
+          canvas.loadFromJSON(data.state, () => {
+            // Restore event listeners after loading
+            canvas.__eventListeners = tempListeners;
+            canvas.renderAll();
+          });
+        } else {
+          // Just restore listeners if no state
+          canvas.__eventListeners = tempListeners;
+          canvas.renderAll();
+        }
       });
     }
   });
 
-  socket.current.on(
-    ("selection:update",
-    (selectionIds) => {
-      if (handleSelectionUpdate) {
-        handleSelectionUpdate(selectionIds);
-      }
-    })
-  );
-
+  // Return cleanup function
   return () => {
-    socket.current.disconnect();
+    console.log("Cleaning up socket connection");
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
   };
-};
-
-export default initializeSocket;
+}

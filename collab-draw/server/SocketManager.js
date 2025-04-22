@@ -7,14 +7,21 @@ class SocketManager {
 
   initializeSocketEvents() {
     this.io.on("connection", (socket) => {
-      console.log(`User connected :  ${socket.id}`);
+      console.log(`User connected: ${socket.id}`);
 
       socket.on("shape:draw", (path) => {
         try {
           socket.broadcast.emit("shape:draw", path);
         } catch (error) {
-          console.error(`Error in draw-data event: ${error.message}`);
-          socket.emit("error", { message: "Socket error while drawing." });
+          this.handleError(socket, error, "drawing");
+        }
+      });
+
+      socket.on("shape:modify", (modifiedShape) => {
+        try {
+          socket.broadcast.emit("shape:modify", modifiedShape);
+        } catch (error) {
+          this.handleError(socket, error, "modifying shape");
         }
       });
 
@@ -23,8 +30,7 @@ class SocketManager {
           const state = param || {};
           socket.broadcast.emit("canvas:undo", { state });
         } catch (error) {
-          console.error(`Error in undo event: ${error.message}`);
-          socket.emit("error", { message: "Socket error while undoing." });
+          this.handleError(socket, error, "undoing");
         }
       });
 
@@ -33,8 +39,7 @@ class SocketManager {
           const state = param || {};
           socket.broadcast.emit("canvas:clear", { state });
         } catch (error) {
-          console.error(`Error in clear event: ${error.message}`);
-          socket.emit("error", { message: "Socket error while undoing." });
+          this.handleError(socket, error, "clearing canvas");
         }
       });
 
@@ -42,24 +47,25 @@ class SocketManager {
         try {
           socket.broadcast.emit("selection:update", selectedIds);
         } catch (error) {
-          console.error(`Error in selection:update event: ${error.message}`);
-          socket.emit("error", {
-            message: "Socket error during selection update.",
-          });
+          this.handleError(socket, error, "updating selection");
         }
       });
 
       socket.on("disconnect", () => {
-        console.log(`User disconnected : ${socket.id}`);
+        console.log(`User disconnected: ${socket.id}`);
       });
     });
   }
 
-  // Global error handling
   setupErrorHandling() {
     this.io.on("error", (error) => {
-      console.error(`Socket.IO error: ${error.message}`);
+      console.error(`Socket.IO global error: ${error.message}`);
     });
+  }
+
+  handleError(socket, error, action) {
+    console.error(`Error during ${action}: ${error.message}`);
+    socket.emit("error", { message: `Socket error while ${action}.` });
   }
 }
 

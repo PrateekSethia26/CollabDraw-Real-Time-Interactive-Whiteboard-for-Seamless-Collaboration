@@ -64,6 +64,7 @@ export default function HomePage() {
           <div className="w-full h-screen bg-white shadow-lg rounded-lg relative">
             {activeComponent === "DrawingCanvas" && (
               <DrawingProvider>
+                      <Toaster position="top-center" />
                 {mounted && <DrawingCanvas isSocketEnabled={true} />}
                 <Toolbar />
                 <button

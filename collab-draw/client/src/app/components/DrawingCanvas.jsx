@@ -247,8 +247,8 @@ export default function DrawingCanvas({ isSocketEnabled }) {
 
     const windowResize = () => {
       canvas.setDimensions({
-        width: window.innerWidth - 330,
-        height: window.innerHeight - 100,
+        width: window.innerWidth,
+        height: window.innerHeight,
       });
       canvas.renderAll();
     };
@@ -451,7 +451,7 @@ export default function DrawingCanvas({ isSocketEnabled }) {
           }
         );
       } else if (activeTool === "text") {
-        const text = new fabric.TextBox("", {
+        const text = new fabric.TextBox("Double tap to edit", {
           left: pointer.x,
           top: pointer.y,
           fill: strokeColor,

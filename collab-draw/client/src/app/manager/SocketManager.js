@@ -1,8 +1,9 @@
 import { io } from "socket.io-client";
+import toast from "react-hot-toast";
 
 /**
  * Initialize and manage socket connection for the drawing canvas
- * 
+ *
  * @param {React.MutableRefObject} socketRef - Reference to store the socket instance
  * @param {boolean} isEnabled - Whether socket functionality is enabled
  * @param {Function} drawHandler - Handler for incoming 'shape:draw' events
@@ -35,11 +36,14 @@ export default function initializeSocket(
   }
 
   // Create new socket connection
-  const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001", {
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
-    transports: ["websocket"],
-  });
+  const socket = io(
+    process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001",
+    {
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      transports: ["websocket"],
+    }
+  );
 
   // Store socket reference
   socketRef.current = socket;
@@ -47,6 +51,7 @@ export default function initializeSocket(
   // Set up socket event listeners
   socket.on("connect", () => {
     console.log("Socket connected with ID:", socket.id);
+    toast.success("Connected to collabration server !!");
   });
 
   socket.on("connect_error", (err) => {
@@ -76,7 +81,10 @@ export default function initializeSocket(
   // Listen for selection update events from other clients
   socket.on("selection:update", (selectionIds) => {
     console.log("Received selection:update event:", selectionIds);
-    if (selectionUpdateHandler && typeof selectionUpdateHandler === "function") {
+    if (
+      selectionUpdateHandler &&
+      typeof selectionUpdateHandler === "function"
+    ) {
       selectionUpdateHandler(selectionIds);
     }
   });
@@ -88,7 +96,7 @@ export default function initializeSocket(
       // Remove event listeners temporarily to prevent loops
       const tempListeners = canvas.__eventListeners;
       canvas.__eventListeners = {};
-      
+
       // Load the state
       canvas.loadFromJSON(data.state, () => {
         // Restore event listeners
@@ -105,7 +113,7 @@ export default function initializeSocket(
       // Remove event listeners temporarily to prevent loops
       const tempListeners = canvas.__eventListeners;
       canvas.__eventListeners = {};
-      
+
       // Clear and set background
       canvas.clear();
       canvas.setBackgroundColor("#ffffff", () => {

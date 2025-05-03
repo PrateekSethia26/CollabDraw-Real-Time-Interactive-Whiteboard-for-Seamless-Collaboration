@@ -2,31 +2,224 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDrawing } from "../context/DrawingContext";
 import toast from "react-hot-toast";
 import { fabric } from "fabric";
+import initializeSocket from "../manager/SocketManager";
+import { v4 as uuidv4 } from "uuid";
 
-export default function DrawingCanvas() {
+const assignId = (obj) => {
+  if (obj && !obj.id) {
+    obj.id = uuidv4();
+  }
+  return obj;
+};
+
+export default function DrawingCanvas({ isSocketEnabled }) {
   const canvasRef = useRef(null);
+  const toolIndicatorRef = useRef(null);
   const socket = useRef(null);
-  const [isSocketEnabled, setIsSocketEnabled] = useState(true); // Toggle for online mode
   const [fabricCanvas, setFabricCanvas] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [activeObject, setActiveObject] = useState(null);
   const [startPoint, setStartPoint] = useState(null);
   const [history, setHistory] = useState([]);
+  const [currentSelectionIds, setCurrentSelectionIds] = useState([]);
+  const lastModified = useRef(new Map()); // Track last modified timestamps to prevent loops
 
   const { activeTool, strokeWidth, strokeColor, setUndo, setClearCanvas } =
     useDrawing();
 
+  // Selection style constants
+  const SELECTION_COLOR = "rgba(17, 119, 255, 0.3)";
+  const SELECTION_BORDER_COLOR = "rgb(17, 119, 255)";
+  const SELECTION_CORNER_COLOR = "rgb(17, 119, 255)";
+
+  // Draw object from socket
+  const drawFromSocket = useCallback(
+    (data) => {
+      if (!fabricCanvas || !data?.props || !data?.type) return;
+      let shape = null;
+
+      const propsWithId = { ...data.props };
+
+      switch (data.type) {
+        case "rectangle":
+          shape = new fabric.Rect(propsWithId);
+          break;
+
+        case "circle":
+          shape = new fabric.Circle(propsWithId);
+          break;
+
+        case "line":
+          shape = new fabric.Line(
+            [data.props.x1, data.props.y1, data.props.x2, data.props.y2],
+            propsWithId
+          );
+          break;
+
+        case "pen":
+          shape = new fabric.Path(data.props.path, propsWithId);
+          if (propsWithId && shape.id) shape.id = propsWithId;
+          break;
+
+        default:
+          console.warn("Unknown shape type from socket:", data.type);
+          return;
+      }
+
+      if (shape) {
+        if (!shape.id) {
+          console.log("Shape received from socket is missing ID:", data.type);
+        }
+
+        fabricCanvas.add(shape);
+        fabricCanvas.renderAll();
+      }
+    },
+    [fabricCanvas]
+  );
+
+  // Handle object modifications from socket
+  const modifyFromSocket = useCallback(
+    (data) => {
+      if (!fabricCanvas || !data || !data.id || !data.props) {
+        console.warn("modifyFromSocket: Invalid data received", data);
+        return;
+      }
+
+      const { id, props } = data;
+      const now = Date.now();
+
+      // Avoid processing our own modifications that just came back to us
+      if (lastModified.current.has(id)) {
+        const lastTime = lastModified.current.get(id);
+        if (now - lastTime < 1000) {
+          // Within 1 second, likely our own
+          return;
+        }
+      }
+
+      const objectToModify = fabricCanvas
+        .getObjects()
+        .find((obj) => obj.id === id || (obj.id && obj.id.id === id));
+      if (objectToModify) {
+        console.log(`Applying modification from socket to object ${id}`);
+
+        // Temporarily disable events to prevent loops
+        const originalEvented = objectToModify.evented;
+        objectToModify.set("evented", false);
+
+        // Apply properties from socket
+        objectToModify.set(props);
+        objectToModify.setCoords();
+
+        // Re-enable events
+        objectToModify.set("evented", originalEvented);
+
+        fabricCanvas.renderAll();
+      }
+    },
+    [fabricCanvas]
+  );
+
   const saveCanvasState = useCallback(() => {
     if (fabricCanvas) {
-      if (activeTool === "select") return;
-      const newState = JSON.stringify(fabricCanvas.toJSON());
+      const newState = JSON.stringify(fabricCanvas.toJSON(["id"]));
       setHistory((prev) => {
         const updated = [...prev, newState];
-
         return updated;
       });
     }
   }, [fabricCanvas]);
+
+  // Update tool indicator UI
+  const updateToolIndicator = useCallback(() => {
+    if (!toolIndicatorRef.current) return;
+
+    const tools = [
+      "select",
+      "rectangle",
+      "circle",
+      "line",
+      "pen",
+      "eraser",
+      "text",
+    ];
+
+    toolIndicatorRef.current.innerHTML = `
+      <div class="tool-indicator p-2 bg-gray-800 text-white rounded absolute top-4 right-4 z-10">
+        Active Tool: <span class="font-bold">${
+          activeTool.charAt(0).toUpperCase() + activeTool.slice(1)
+        }</span>
+      </div>
+    `;
+  }, [activeTool]);
+
+  // Apply selection styles to objects
+  const applySelectionStyles = useCallback((obj) => {
+    if (!obj) return;
+
+    if (obj.type === "activeSelection") {
+      obj.set({
+        borderColor: SELECTION_BORDER_COLOR,
+        cornerColor: SELECTION_CORNER_COLOR,
+        cornerSize: 10,
+        transparentCorners: false,
+        cornerStyle: "circle",
+        borderDashArray: [3, 3],
+      });
+    } else {
+      obj.set({
+        borderColor: SELECTION_BORDER_COLOR,
+        cornerColor: SELECTION_CORNER_COLOR,
+        cornerSize: 8,
+        transparentCorners: false,
+        cornerStyle: "circle",
+        borderDashArray: [3, 3],
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    // Fixed parameter order and names to match the SocketManager implementation
+    const cleanup = initializeSocket(
+      socket,
+      isSocketEnabled,
+      drawFromSocket,
+      modifyFromSocket,
+      fabricCanvas,
+      (selectionIds) => {
+        if (!fabricCanvas || !Array.isArray(selectionIds)) return;
+
+        const objectsToSelect = fabricCanvas
+          .getObjects()
+          .filter((obj) => obj.id && selectionIds.includes(obj.id));
+
+        fabricCanvas.discardActiveObject();
+        if (objectsToSelect.length === 1) {
+          const obj = objectsToSelect[0];
+          fabricCanvas.setActiveObject(obj);
+          applySelectionStyles(obj);
+        } else if (objectsToSelect.length > 1) {
+          const sel = new fabric.ActiveSelection(objectsToSelect, {
+            canvas: fabricCanvas,
+          });
+          applySelectionStyles(sel);
+          fabricCanvas.setActiveObject(sel);
+        }
+
+        fabricCanvas.requestRenderAll();
+        console.log("Received selection update, setting state:", selectionIds);
+        setCurrentSelectionIds(selectionIds);
+      }
+    );
+    return cleanup;
+  }, [
+    isSocketEnabled,
+    fabricCanvas,
+    drawFromSocket,
+    modifyFromSocket,
+    applySelectionStyles,
+  ]);
 
   useEffect(() => {
     console.log("History length from saved : ", history.length);
@@ -34,31 +227,36 @@ export default function DrawingCanvas() {
 
   useEffect(() => {
     if (!canvasRef.current) {
-      throw new error("Canvas is not defined");
+      console.error("Canvas is not defined");
+      return;
     }
 
-    // intailize canvas
+    // Initialize canvas
     const canvas = new fabric.Canvas(canvasRef.current, {
       isDrawingMode: activeTool === "pen",
-      width: window.innerWidth - 330,
-      height: window.innerHeight - 100,
+      width: window.innerWidth,
+      height: window.innerHeight,
       backgroundColor: "#ffffff",
+      // Set default selection styles
+      selectionColor: SELECTION_COLOR,
+      selectionBorderColor: SELECTION_BORDER_COLOR,
+      selectionLineWidth: 1,
     });
 
     setFabricCanvas(canvas);
 
     const windowResize = () => {
       canvas.setDimensions({
-        width: window.innerWidth - 330,
-        height: window.innerHeight - 100,
+        width: window.innerWidth,
+        height: window.innerHeight,
       });
       canvas.renderAll();
     };
     window.addEventListener("resize", windowResize);
 
     setTimeout(() => {
-      const intialState = JSON.stringify(canvas.toJSON());
-      setHistory([intialState]);
+      const initialState = JSON.stringify(canvas.toJSON(["id"]));
+      setHistory([initialState]);
     }, 100);
 
     toast.success("Canvas ready! Start drawing!");
@@ -69,23 +267,41 @@ export default function DrawingCanvas() {
     };
   }, []);
 
+  // Create tool indicator div
   useEffect(() => {
-    console.log(activeTool);
-  }, [activeTool]);
+    if (!toolIndicatorRef.current) {
+      const indicatorDiv = document.createElement("div");
+      indicatorDiv.className = "tool-indicator-container";
+      const canvasContainer = canvasRef.current?.parentElement;
+      if (canvasContainer) {
+        canvasContainer.appendChild(indicatorDiv);
+        toolIndicatorRef.current = indicatorDiv;
+      }
+    }
+
+    // Update tool indicator when active tool changes
+    updateToolIndicator();
+
+    return () => {
+      if (toolIndicatorRef.current) {
+        toolIndicatorRef.current.remove();
+      }
+    };
+  }, [activeTool, updateToolIndicator]);
 
   useEffect(() => {
     if (!fabricCanvas) return;
 
     const undoCanvas = () => {
-      if (!fabricCanvas || history.length <= 0) {
+      if (!fabricCanvas || history.length <= 1) {
         console.log("Cannot undo");
-        console.log(fabricCanvas);
         return;
       }
 
       console.log("🔁 Undo clicked");
 
       const prevState = history[history.length - 1];
+      const socketPrevState = history[history.length - 2];
 
       // Disable modification listeners during load to prevent loops
       fabricCanvas.off("object:added", saveCanvasState);
@@ -95,7 +311,14 @@ export default function DrawingCanvas() {
       fabricCanvas.loadFromJSON(prevState, () => {
         fabricCanvas.renderAll();
       });
-      history.pop();
+
+      // Update history after applying changes
+      setHistory((prev) => prev.slice(0, -1));
+
+      if (isSocketEnabled && socket?.current) {
+        socket.current.emit("canvas:undo", { state: socketPrevState });
+      }
+
       // Re-enable listeners after load and state update
       fabricCanvas.on("object:added", saveCanvasState);
       fabricCanvas.on("object:modified", saveCanvasState);
@@ -114,6 +337,10 @@ export default function DrawingCanvas() {
           setHistory([]);
           fabricCanvas.renderAll();
         });
+
+        if (isSocketEnabled && socket?.current) {
+          socket.current.emit("canvas:clear", { state: null });
+        }
       }
     };
 
@@ -136,23 +363,68 @@ export default function DrawingCanvas() {
     }
 
     if (activeTool === "select") {
+      fabricCanvas.selection = true;
+      fabricCanvas.getObjects().forEach((obj) => {
+        obj.selectable = true;
+        obj.evented = true;
+      });
+
+      fabricCanvas.defaultCursor = "default";
+      fabricCanvas.hoverCursor = "move";
+    } else {
+      fabricCanvas.selection = false;
+      fabricCanvas.getObjects().forEach((obj) => {
+        obj.selectable = false;
+        obj.evented = false;
+      });
+
       fabricCanvas.discardActiveObject();
-      fabricCanvas.renderAll();
+      fabricCanvas.requestRenderAll();
     }
 
     // Clear mouse activities
     fabricCanvas.off("mouse:up");
     fabricCanvas.off("mouse:down");
     fabricCanvas.off("mouse:move");
+    fabricCanvas.off("path:created");
+
+    fabricCanvas.off("selection:created");
+    fabricCanvas.off("selection:updated");
+    fabricCanvas.off("selection:cleared");
+    fabricCanvas.off("object:modified");
+    fabricCanvas.off("object:moving");
+    fabricCanvas.off("object:scaling");
+    fabricCanvas.off("object:rotating");
+
+    fabricCanvas.on("path:created", (options) => {
+      console.log("Path being created");
+      let path = options.path;
+      console.log("Path from pen", path);
+      if (!path) {
+        return;
+      }
+      path = assignId(path);
+
+      if (isSocketEnabled && socket?.current) {
+        const propsToSend = path.toObject(["id"]);
+        socket.current.emit("shape:draw", {
+          type: "pen",
+          props: propsToSend,
+        });
+      }
+    });
 
     const handleMouseDown = (options) => {
-      if (!fabricCanvas) return; // prevent memory leak
+      if (!fabricCanvas) return;
 
       const pointer = fabricCanvas.getPointer(options.e);
       setStartPoint({ x: pointer.x, y: pointer.y });
+      console.log("For line", pointer);
+
+      let objectToAdd = null;
 
       if (activeTool === "rectangle") {
-        const rect = new fabric.Rect({
+        objectToAdd = new fabric.Rect({
           left: pointer.x,
           top: pointer.y,
           width: 0,
@@ -161,12 +433,8 @@ export default function DrawingCanvas() {
           stroke: strokeColor,
           strokeWidth,
         });
-        fabricCanvas.add(rect);
-        fabricCanvas.setActiveObject(rect);
-        setActiveObject(rect);
-        setIsDrawing(true);
       } else if (activeTool === "circle") {
-        const circle = new fabric.Circle({
+        objectToAdd = new fabric.Circle({
           left: pointer.x,
           top: pointer.y,
           radius: 0,
@@ -174,33 +442,36 @@ export default function DrawingCanvas() {
           stroke: strokeColor,
           strokeWidth,
         });
-
-        fabricCanvas.add(circle);
-        fabricCanvas.setActiveObject(circle);
-        setActiveObject(circle);
-        setIsDrawing(true);
       } else if (activeTool === "line") {
-        const line = new fabric.Line(
+        objectToAdd = new fabric.Line(
           [pointer.x, pointer.y, pointer.x, pointer.y],
           {
             stroke: strokeColor,
             strokeWidth,
           }
         );
-
-        fabricCanvas.add(line);
-        fabricCanvas.setActiveObject(line);
-        setActiveObject(line);
-        setIsDrawing(true);
       } else if (activeTool === "text") {
-        const text = new fabric.TextBox({
+        const text = new fabric.TextBox("Double tap to edit", {
           left: pointer.x,
           top: pointer.y,
           fill: strokeColor,
           fontSize: strokeWidth,
           fontFamily: "Arial",
+          id: uuidv4(),
         });
         fabricCanvas.add(text);
+        fabricCanvas.setActiveObject(text);
+        applySelectionStyles(text);
+        text.enterEditing();
+        setActiveObject(null);
+        setIsDrawing(false);
+      }
+
+      if (objectToAdd) {
+        objectToAdd = assignId(objectToAdd);
+        fabricCanvas.add(objectToAdd);
+        setActiveObject(objectToAdd);
+        setIsDrawing(true);
       }
     };
 
@@ -208,7 +479,7 @@ export default function DrawingCanvas() {
       if (!isDrawing || !fabricCanvas || !activeObject || !startPoint) return;
 
       const pointer = fabricCanvas.getPointer(options.e);
-      if (activeTool === "rectangle" && activeObject.type === "rect") {
+      if (activeTool === "rectangle") {
         const width = Math.abs(pointer.x - startPoint.x);
         const height = Math.abs(pointer.y - startPoint.y);
 
@@ -221,30 +492,167 @@ export default function DrawingCanvas() {
 
         activeObject.set({ width, height });
         fabricCanvas.renderAll();
-      } else if (activeTool === "circle" && activeObject.type === "circle") {
+      } else if (activeTool === "circle") {
         const dx = pointer.x - startPoint.x;
         const dy = pointer.y - startPoint.y;
         const radius = Math.sqrt(dx * dx + dy * dy);
 
-        // Calculate the new left and top to center the circle at the start point
         const left = startPoint.x - radius;
         const top = startPoint.y - radius;
 
         activeObject.set({ radius, left, top });
         fabricCanvas.renderAll();
-      } else if (activeTool === "line" && activeObject.type === "line") {
+      } else if (activeTool === "line") {
         activeObject.set({ x2: pointer.x, y2: pointer.y });
         fabricCanvas.renderAll();
       }
     };
 
     const handleMouseUp = () => {
-      if (isDrawing && fabricCanvas && activeObject) {
-        setIsDrawing(false);
-        setActiveObject(null);
-        fabricCanvas.renderAll();
+      if (!fabricCanvas) return;
+
+      const isDrawingShape = ["rectangle", "circle", "line"].includes(
+        activeTool
+      );
+
+      if (
+        isSocketEnabled &&
+        activeObject &&
+        isDrawingShape &&
+        socket?.current
+      ) {
+        console.log("Active obj ", activeObject);
+        if (!activeObject.id) {
+          console.warn("Object missing ID before sending:", activeObject.type);
+          activeObject = assignId(activeObject);
+        }
+
+        const shapeData = activeObject.toObject(["id"]);
+        console.log("shapeData", shapeData);
+        socket.current.emit("shape:draw", {
+          type: activeTool,
+          props: shapeData,
+        });
+      }
+
+      setActiveObject(null);
+      fabricCanvas.renderAll();
+      setIsDrawing(false);
+    };
+
+    const handleSelectionChange = (e) => {
+      if (!fabricCanvas) return;
+
+      // Apply selection styles to the active object
+      const activeSelection = fabricCanvas.getActiveObject();
+      if (activeSelection) {
+        applySelectionStyles(activeSelection);
+      }
+
+      // Only emit selection changes when in select mode
+      if (activeTool !== "select" || !isSocketEnabled || !socket.current)
+        return;
+
+      let selectionIds = [];
+
+      if (activeSelection) {
+        if (activeSelection.type === "activeSelection") {
+          selectionIds = activeSelection
+            .getObjects()
+            .map((obj) => obj.id)
+            .filter((id) => !!id);
+        } else if (activeSelection.id) {
+          selectionIds = [activeSelection.id];
+        }
+      }
+
+      const sortedNew = [...selectionIds].sort();
+      const sortedCurrent = [...currentSelectionIds].sort();
+
+      if (JSON.stringify(sortedNew) !== JSON.stringify(sortedCurrent)) {
+        console.log("Local selection changed. Emitting:", sortedNew);
+        socket.current.emit("selection:update", sortedNew);
+        setCurrentSelectionIds(selectionIds);
       }
     };
+
+    // Improved object modification handlers
+
+    // Handle all transformation events
+    const handleObjectModification = (e) => {
+      if (!isSocketEnabled || !socket?.current || !e.target) return;
+
+      const modifiedObj = e.target;
+      const now = Date.now();
+
+      // For single objects
+      if (modifiedObj.type !== "activeSelection") {
+        if (!modifiedObj.id) {
+          modifiedObj.id = uuidv4();
+        }
+
+        const objData = modifiedObj.toObject(["id"]);
+        lastModified.current.set(modifiedObj.id, now);
+
+        socket.current.emit("shape:modify", {
+          id: modifiedObj.id,
+          props: objData,
+        });
+      }
+      // For multiple selected objects in an active selection
+      else {
+        const objects = modifiedObj.getObjects();
+
+        // Calculate transformation matrix from the active selection
+        const matrix = modifiedObj.calcTransformMatrix();
+
+        objects.forEach((obj) => {
+          if (!obj.id) {
+            obj.id = uuidv4();
+          }
+
+          // Get object's absolute position by applying the group's transformation matrix
+          const newPoint = fabric.util.transformPoint(
+            {
+              x: obj.left,
+              y: obj.top,
+            },
+            matrix
+          );
+
+          // Clone the object to avoid reference issues
+          const objClone = fabric.util.object.clone(obj);
+
+          // Apply transformations from the group
+          objClone.set({
+            left: newPoint.x,
+            top: newPoint.y,
+            scaleX: obj.scaleX * modifiedObj.scaleX,
+            scaleY: obj.scaleY * modifiedObj.scaleY,
+            angle: obj.angle + modifiedObj.angle,
+          });
+
+          // Prepare and send object data
+          const objData = objClone.toObject(["id"]);
+          lastModified.current.set(obj.id, now);
+
+          socket.current.emit("shape:modify", {
+            id: obj.id,
+            props: objData,
+          });
+        });
+      }
+    };
+
+    // Apply different handlers for different modification types for better control
+    fabricCanvas.on("object:modified", handleObjectModification);
+    fabricCanvas.on("object:moving", handleObjectModification);
+    fabricCanvas.on("object:scaling", handleObjectModification);
+    fabricCanvas.on("object:rotating", handleObjectModification);
+
+    fabricCanvas.on("selection:created", handleSelectionChange);
+    fabricCanvas.on("selection:updated", handleSelectionChange);
+    fabricCanvas.on("selection:cleared", handleSelectionChange);
 
     fabricCanvas.on("mouse:up", handleMouseUp);
     fabricCanvas.on("mouse:down", handleMouseDown);
@@ -258,6 +666,16 @@ export default function DrawingCanvas() {
       fabricCanvas.off("mouse:up", handleMouseUp);
       fabricCanvas.off("mouse:down", handleMouseDown);
       fabricCanvas.off("mouse:move", handleMouseMove);
+      fabricCanvas.off("path:created");
+
+      fabricCanvas.off("selection:created", handleSelectionChange);
+      fabricCanvas.off("selection:updated", handleSelectionChange);
+      fabricCanvas.off("selection:cleared", handleSelectionChange);
+
+      fabricCanvas.off("object:modified", handleObjectModification);
+      fabricCanvas.off("object:moving", handleObjectModification);
+      fabricCanvas.off("object:scaling", handleObjectModification);
+      fabricCanvas.off("object:rotating", handleObjectModification);
     };
   }, [
     activeTool,
@@ -269,11 +687,16 @@ export default function DrawingCanvas() {
     activeObject,
     setUndo,
     setClearCanvas,
+    saveCanvasState,
+    isSocketEnabled,
+    currentSelectionIds,
+    applySelectionStyles,
   ]);
 
   return (
     <div className="flex-1 overflow-hidden drawing-area relative">
       <canvas ref={canvasRef} className="absolute" />
+      {/* Tool indicator will be inserted here via ref */}
     </div>
   );
 }

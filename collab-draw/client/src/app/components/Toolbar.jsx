@@ -48,8 +48,10 @@ export default function Toolbar() {
             key={tool.id}
             onClick={() => setActiveTool(tool.id)}
             title={tool.label}
-            className={`group relative flex items-center justify-center w-15 h-15 rounded-xl border border-gray-300 text-black hover:bg-gray-500 transition-all duration-200 ${
-              activeTool === tool.id ? "active" : ""
+            className={`group relative flex items-center justify-center w-15 h-15 rounded-xl border border-gray-300 text-black hover:bg-gray-500 transition-all duration-200  ${
+              activeTool === tool.id
+                ? "bg-blue-500 text-white"
+                : "hover:bg-gray-500"
             }`}
           >
             <tool.icon className="w-5 h-5" />

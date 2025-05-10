@@ -18,6 +18,8 @@ export default function initializeSocket(
   drawHandler,
   modifyHandler,
   canvas,
+  roomId,
+  username,
   selectionUpdateHandler
 ) {
   // Early return if sockets are disabled
@@ -52,6 +54,7 @@ export default function initializeSocket(
   socket.on("connect", () => {
     console.log("Socket connected with ID:", socket.id);
     toast.success("Connected to collabration server !!");
+    socket.emit("join-room", { roomId, username });
   });
 
   socket.on("connect_error", (err) => {
@@ -60,6 +63,26 @@ export default function initializeSocket(
 
   socket.on("disconnect", (reason) => {
     console.log("Socket disconnected:", reason);
+  });
+
+  socket.on("user:joined", ({ username, socketId }) => {
+    toast.success(`User ${username} joined the room`);
+
+    if (canvas && socketId) {
+      const canvasJSON = canvas.toJSON();
+      socket.emit("canvas:send-state", {
+        toSocketId: socketId,
+        canvasJSON,
+      });
+    }
+  });
+
+  socket.on("canvas:load-state", (canvasJSON) => {
+    if (!canvasJSON) return;
+
+    canvas.loadFromJSON(canvasJSON, () => {
+      canvas.renderAll();
+    });
   });
 
   // Listen for drawing events from other clients
@@ -87,6 +110,16 @@ export default function initializeSocket(
     ) {
       selectionUpdateHandler(selectionIds);
     }
+  });
+
+  socket.on("canvas:load", (data) => {
+    if (!data) return;
+    // Load the state
+    canvas.loadFromJSON(data.state, () => {
+      // Restore event listeners
+      canvas.__eventListeners = tempListeners;
+      canvas.renderAll();
+    });
   });
 
   // Listen for canvas undo events

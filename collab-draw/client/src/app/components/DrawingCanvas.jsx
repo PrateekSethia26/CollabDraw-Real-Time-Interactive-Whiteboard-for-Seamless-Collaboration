@@ -12,9 +12,8 @@ const assignId = (obj) => {
   return obj;
 };
 
-export default function DrawingCanvas({ isSocketEnabled }) {
+export default function DrawingCanvas({ isSocketEnabled, roomId, username }) {
   const canvasRef = useRef(null);
-  const toolIndicatorRef = useRef(null);
   const socket = useRef(null);
   const [fabricCanvas, setFabricCanvas] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -131,29 +130,6 @@ export default function DrawingCanvas({ isSocketEnabled }) {
     }
   }, [fabricCanvas]);
 
-  // Update tool indicator UI
-  const updateToolIndicator = useCallback(() => {
-    if (!toolIndicatorRef.current) return;
-
-    const tools = [
-      "select",
-      "rectangle",
-      "circle",
-      "line",
-      "pen",
-      "eraser",
-      "text",
-    ];
-
-    toolIndicatorRef.current.innerHTML = `
-      <div class="tool-indicator p-2 bg-gray-800 text-white rounded absolute top-4 right-4 z-10">
-        Active Tool: <span class="font-bold">${
-          activeTool.charAt(0).toUpperCase() + activeTool.slice(1)
-        }</span>
-      </div>
-    `;
-  }, [activeTool]);
-
   // Apply selection styles to objects
   const applySelectionStyles = useCallback((obj) => {
     if (!obj) return;
@@ -187,6 +163,8 @@ export default function DrawingCanvas({ isSocketEnabled }) {
       drawFromSocket,
       modifyFromSocket,
       fabricCanvas,
+      roomId,
+      username,
       (selectionIds) => {
         if (!fabricCanvas || !Array.isArray(selectionIds)) return;
 
@@ -220,6 +198,12 @@ export default function DrawingCanvas({ isSocketEnabled }) {
     modifyFromSocket,
     applySelectionStyles,
   ]);
+
+  useEffect(() => {
+    if (isSocketEnabled && roomId) {
+      socket.current.emit("join-room", { roomId, username });
+    }
+  }, [roomId, username]);
 
   useEffect(() => {
     console.log("History length from saved : ", history.length);
@@ -266,28 +250,6 @@ export default function DrawingCanvas({ isSocketEnabled }) {
       window.removeEventListener("resize", windowResize);
     };
   }, []);
-
-  // Create tool indicator div
-  useEffect(() => {
-    if (!toolIndicatorRef.current) {
-      const indicatorDiv = document.createElement("div");
-      indicatorDiv.className = "tool-indicator-container";
-      const canvasContainer = canvasRef.current?.parentElement;
-      if (canvasContainer) {
-        canvasContainer.appendChild(indicatorDiv);
-        toolIndicatorRef.current = indicatorDiv;
-      }
-    }
-
-    // Update tool indicator when active tool changes
-    updateToolIndicator();
-
-    return () => {
-      if (toolIndicatorRef.current) {
-        toolIndicatorRef.current.remove();
-      }
-    };
-  }, [activeTool, updateToolIndicator]);
 
   useEffect(() => {
     if (!fabricCanvas) return;
@@ -408,6 +370,7 @@ export default function DrawingCanvas({ isSocketEnabled }) {
       if (isSocketEnabled && socket?.current) {
         const propsToSend = path.toObject(["id"]);
         socket.current.emit("shape:draw", {
+          roomId,
           type: "pen",
           props: propsToSend,
         });
@@ -530,6 +493,7 @@ export default function DrawingCanvas({ isSocketEnabled }) {
         const shapeData = activeObject.toObject(["id"]);
         console.log("shapeData", shapeData);
         socket.current.emit("shape:draw", {
+          roomId,
           type: activeTool,
           props: shapeData,
         });
@@ -595,6 +559,7 @@ export default function DrawingCanvas({ isSocketEnabled }) {
         lastModified.current.set(modifiedObj.id, now);
 
         socket.current.emit("shape:modify", {
+          roomId,
           id: modifiedObj.id,
           props: objData,
         });
@@ -637,6 +602,7 @@ export default function DrawingCanvas({ isSocketEnabled }) {
           lastModified.current.set(obj.id, now);
 
           socket.current.emit("shape:modify", {
+            roomId,
             id: obj.id,
             props: objData,
           });

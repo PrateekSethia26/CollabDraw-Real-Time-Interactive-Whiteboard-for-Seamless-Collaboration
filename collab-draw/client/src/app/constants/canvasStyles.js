@@ -1,0 +1,5 @@
+export const SELECTION_STYLES = {
+  SELECTION_COLOR: "rgba(17, 119, 255, 0.3)",
+  SELECTION_BORDER_COLOR: "rgb(17, 119, 255)",
+  SELECTION_CORNER_COLOR: "rgb(17, 119, 255)",
+};

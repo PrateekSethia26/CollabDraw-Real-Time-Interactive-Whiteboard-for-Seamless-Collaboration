@@ -36,6 +36,7 @@ class SocketManager {
 
       socket.on("shape:modify", (modifiedShape) => {
         try {
+          console.log("Modify id : ", modifiedShape);
           const { roomId, ...rest } = modifiedShape;
           socket.to(roomId).emit("shape:modify", rest);
           // socket.broadcast.emit("shape:modify", modifiedShape);
@@ -65,6 +66,7 @@ class SocketManager {
       socket.on("selection:update", (selectedIds) => {
         try {
           const { roomId, ...rest } = selectedIds;
+
           socket.to(roomId).emit("selection:update", rest);
           // socket.broadcast.emit("selection:update", selectedIds);
         } catch (error) {

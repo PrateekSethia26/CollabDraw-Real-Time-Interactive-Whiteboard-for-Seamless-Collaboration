@@ -97,6 +97,7 @@ export default function initializeSocket(
   socket.on("shape:modify", (data) => {
     console.log("Received shape:modify event for object ID:", data.id);
     if (modifyHandler && typeof modifyHandler === "function") {
+      console.log("Hello");
       modifyHandler(data);
     }
   });

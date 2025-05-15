@@ -37,7 +37,7 @@ export default function Toolbar() {
     { id: "rectangle", icon: Square, label: "Rectangle" },
     { id: "circle", icon: Circle, label: "Circle" },
     { id: "line", icon: MoveRight, label: "Line" },
-    { id: "text", icon: Type, label: "Text" },
+    // { id: "text", icon: Type, label: "Text" },
   ];
 
   return (

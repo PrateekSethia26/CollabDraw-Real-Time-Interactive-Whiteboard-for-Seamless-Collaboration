@@ -107,10 +107,15 @@ export default function DrawingCanvas({ isSocketEnabled, roomId, username }) {
         const originalEvented = objectToModify.evented;
         objectToModify.set("evented", false);
 
-        // Apply properties from socket
-        objectToModify.set(props);
-        objectToModify.setCoords();
+        if (objectToModify.type === "line") {
+          const { x1, y1, x2, y2, ...rest } = props;
+          objectToModify.set({ x1, y1, x2, y2, ...rest });
+        } else {
+          // Apply properties from socket
+          objectToModify.set(props);
+        }
 
+        objectToModify.setCoords();
         // Re-enable events
         objectToModify.set("evented", originalEvented);
 
@@ -262,9 +267,10 @@ export default function DrawingCanvas({ isSocketEnabled, roomId, username }) {
 
       console.log("🔁 Undo clicked");
 
-      const prevState = history[history.length - 1];
+      // const prevState = history[history.length - 1];
       const socketPrevState = history[history.length - 2];
 
+      const saveCanvasStateListener = fabricCanvas._saveCanvasState;
       // Disable modification listeners during load to prevent loops
       fabricCanvas.off("object:added", saveCanvasState);
       fabricCanvas.off("object:modified", saveCanvasState);
@@ -274,6 +280,7 @@ export default function DrawingCanvas({ isSocketEnabled, roomId, username }) {
         fabricCanvas.renderAll();
       });
 
+      // history.pop();
       // Update history after applying changes
       setHistory((prev) => prev.slice(0, -1));
 

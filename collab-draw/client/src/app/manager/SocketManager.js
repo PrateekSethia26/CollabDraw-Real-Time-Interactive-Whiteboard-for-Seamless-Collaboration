@@ -9,6 +9,8 @@ import toast from "react-hot-toast";
  * @param {Function} drawHandler - Handler for incoming 'shape:draw' events
  * @param {Function} modifyHandler - Handler for incoming 'shape:modify' events
  * @param {Object} canvas - The fabric.js canvas instance
+ * @param {string} roomId - The room ID for collaboration
+ * @param {string} username - The current user's username
  * @param {Function} selectionUpdateHandler - Handler for incoming 'selection:update' events
  * @returns {Function} Cleanup function to disconnect socket
  */
@@ -18,6 +20,8 @@ export default function initializeSocket(
   drawHandler,
   modifyHandler,
   canvas,
+  roomId,
+  username,
   selectionUpdateHandler
 ) {
   // Early return if sockets are disabled
@@ -51,15 +55,72 @@ export default function initializeSocket(
   // Set up socket event listeners
   socket.on("connect", () => {
     console.log("Socket connected with ID:", socket.id);
-    toast.success("Connected to collabration server !!");
+    toast.success("Connected to collaboration server!");
+    if (roomId && username) {
+      socket.emit("join-room", { roomId, username });
+    }
   });
 
   socket.on("connect_error", (err) => {
     console.error("Socket connection error:", err.message);
+    toast.error("Connection error. Trying to reconnect...");
   });
 
   socket.on("disconnect", (reason) => {
     console.log("Socket disconnected:", reason);
+    if (reason === "io server disconnect") {
+      // the disconnection was initiated by the server, reconnect manually
+      socket.connect();
+    }
+  });
+
+  socket.on("user:joined", ({ username, socketId }) => {
+    toast.success(`User ${username} joined the room`);
+
+    if (canvas && socketId) {
+      // Ensure IDs are included in the serialization
+      const canvasJSON = JSON.stringify(canvas.toJSON(['id']));
+      console.log("Sending canvas state to new user");
+      socket.emit("canvas:send-state", {
+        toSocketId: socketId,
+        canvasJSON,
+      });
+    }
+  });
+
+  socket.on("canvas:load-state", (canvasJSON) => {
+    if (!canvas || !canvasJSON) return;
+    
+    console.log("Received canvas state from another user");
+    
+    // Store event listeners temporarily to prevent loops
+    const tempListeners = {...canvas.__eventListeners};
+    canvas.__eventListeners = {};
+    
+    try {
+      // Parse JSON if it's a string
+      const jsonData = typeof canvasJSON === 'string' ? JSON.parse(canvasJSON) : canvasJSON;
+      
+      canvas.loadFromJSON(jsonData, () => {
+        // Ensure all objects have IDs
+        canvas.getObjects().forEach(obj => {
+          if (!obj.id) {
+            console.warn("Object missing ID after load:", obj.type);
+            // Assign ID if missing
+            obj.id = Math.random().toString(36).substring(2, 15);
+          }
+        });
+        
+        // Restore event listeners and render
+        canvas.__eventListeners = tempListeners;
+        canvas.renderAll();
+        console.log("Canvas state loaded successfully");
+      });
+    } catch (error) {
+      console.error("Error loading canvas state:", error);
+      canvas.__eventListeners = tempListeners; // Restore listeners even on error
+      toast.error("Error loading canvas state");
+    }
   });
 
   // Listen for drawing events from other clients
@@ -89,20 +150,36 @@ export default function initializeSocket(
     }
   });
 
-  // Listen for canvas undo events
   socket.on("canvas:undo", (data) => {
     console.log("Received canvas:undo event");
     if (canvas && data.state) {
-      // Remove event listeners temporarily to prevent loops
-      const tempListeners = canvas.__eventListeners;
+      // Store event listeners temporarily
+      const tempListeners = {...canvas.__eventListeners};
       canvas.__eventListeners = {};
 
-      // Load the state
-      canvas.loadFromJSON(data.state, () => {
-        // Restore event listeners
-        canvas.__eventListeners = tempListeners;
-        canvas.renderAll();
-      });
+      try {
+        // Parse JSON if it's a string
+        const jsonData = typeof data.state === 'string' ? JSON.parse(data.state) : data.state;
+        
+        // Load the state
+        canvas.loadFromJSON(jsonData, () => {
+          // Ensure all objects have IDs
+          canvas.getObjects().forEach(obj => {
+            if (!obj.id) {
+              console.warn("Object missing ID after undo:", obj.type);
+              obj.id = Math.random().toString(36).substring(2, 15);
+            }
+          });
+          
+          // Restore event listeners
+          canvas.__eventListeners = tempListeners;
+          canvas.renderAll();
+        });
+      } catch (error) {
+        console.error("Error processing undo:", error);
+        canvas.__eventListeners = tempListeners; // Restore listeners even on error
+        toast.error("Error applying undo action");
+      }
     }
   });
 
@@ -110,20 +187,35 @@ export default function initializeSocket(
   socket.on("canvas:clear", (data) => {
     console.log("Received canvas:clear event");
     if (canvas) {
-      // Remove event listeners temporarily to prevent loops
-      const tempListeners = canvas.__eventListeners;
+      // Store event listeners temporarily
+      const tempListeners = {...canvas.__eventListeners};
       canvas.__eventListeners = {};
 
       // Clear and set background
       canvas.clear();
       canvas.setBackgroundColor("#ffffff", () => {
         // Reload if state provided
-        if (data.state) {
-          canvas.loadFromJSON(data.state, () => {
-            // Restore event listeners after loading
-            canvas.__eventListeners = tempListeners;
-            canvas.renderAll();
-          });
+        if (data && data.state) {
+          try {
+            // Parse JSON if it's a string
+            const jsonData = typeof data.state === 'string' ? JSON.parse(data.state) : data.state;
+            
+            canvas.loadFromJSON(jsonData, () => {
+              // Ensure all objects have IDs
+              canvas.getObjects().forEach(obj => {
+                if (!obj.id) {
+                  obj.id = Math.random().toString(36).substring(2, 15);
+                }
+              });
+              
+              // Restore event listeners after loading
+              canvas.__eventListeners = tempListeners;
+              canvas.renderAll();
+            });
+          } catch (error) {
+            console.error("Error loading state after clear:", error);
+            canvas.__eventListeners = tempListeners; // Restore listeners even on error
+          }
         } else {
           // Just restore listeners if no state
           canvas.__eventListeners = tempListeners;

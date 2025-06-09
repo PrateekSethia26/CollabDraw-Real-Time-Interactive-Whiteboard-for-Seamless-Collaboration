@@ -7,7 +7,6 @@ import toast, { Toaster } from "react-hot-toast";
 import { DrawingProvider } from "./context/DrawingContext";
 import Toolbar from "./components/Toolbar";
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
-import e from "cors";
 
 const DrawingCanvas = dynamic(() => import("./components/DrawingCanvas"), {
   ssr: false, // Disable server-side rendering if necessary
@@ -33,11 +32,11 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false);
   const [showModel, setShowModel] = useState(false);
   const [showJoinModel, setShowJoinModel] = useState(false);
-  const [roomId, setRoomId] = useState("");
   const [currentRoomId, setCurrentRoomId] = useState("");
   const [joinRoomId, setJoinRoomId] = useState("");
+  const [username, setUsername] = useState("");
   const roomInputRef = useRef(null);
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
 
   useEffect(() => {
     setMounted(true);
@@ -74,13 +73,27 @@ export default function HomePage() {
     }
   };
 
+  function generateRoomRandomId() {
+    const randomPart = () => Math.random().toString(36).substring(2, 6);
+
+    return `${randomPart()}-${randomPart()}-${randomPart()}`;
+  }
+
+  const generateRandomUsername = () => {
+    return "User-" + Math.floor(Math.random() * 10000);
+  };
+
   const handleCreateRoom = () => {
     setShowModel(false);
 
     //Generate Room id
-    const newroomId = `room_${Date.now().toString(36)}_${Math.random().toString(
-      36
-    )}`;
+    const newroomId = generateRoomRandomId();
+
+    const newUsername =
+      user?.username || user?.firstName || generateRandomUsername();
+
+    setUsername(newUsername);
+
     setCurrentRoomId(newroomId);
     setActiveComponent("CollaborativeCanvas");
     toast.success("Room created successfully!");
@@ -98,12 +111,17 @@ export default function HomePage() {
     }, 100);
   };
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = (e) => {
     e.preventDefault();
     if (!joinRoomId.trim()) {
       toast.error("Please enter a valid Room ID");
       return;
     }
+
+    const newUsername =
+      user?.username || user?.firstName || generateRandomUsername();
+
+    setUsername(newUsername);
 
     // setShowModel(false);
     setCurrentRoomId(joinRoomId);
@@ -122,17 +140,6 @@ export default function HomePage() {
           <nav className="flex justify-between items-center mx-5 py-6">
             <h1 className="text-2xl font-bold">Sync Draw</h1>
             <div>
-              {/* <SignUpButton>
-                <button className="mr-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-md">
-                  Sign up
-                </button>
-              </SignUpButton>
-              <SignInButton mode="model">
-                <button className="px-4 py-2 bg-pink-600 hover:bg-pink-700 rounded-md">
-                  Log in
-                </button>
-              </SignInButton> */}
-
               {isSignedIn ? (
                 <UserButton
                   appearance={{
@@ -253,6 +260,7 @@ export default function HomePage() {
                   <DrawingCanvas
                     isSocketEnabled={true}
                     roomId={currentRoomId}
+                    username={username}
                   />
                   <Toolbar />
                   {/* Room Info Bar */}
